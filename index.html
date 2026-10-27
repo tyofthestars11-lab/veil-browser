@@ -98,7 +98,7 @@ import * as THREE from 'three';
 // ============================== PHI CORE ==============================
 const PHI = (1 + Math.sqrt(5)) / 2;
 const GOLDEN_ANGLE = 222.4922 * Math.PI / 180;   // Tyree's golden angle
-const fib = n => { let a = 0, b = 1; for (let i = 0; i < n; i++) [a, b] = [b, a + b]; return a; };
+const fib = n => { let a = 0, b = 1; for (let i = 0; i < n + 1; i++) [a, b] = [b, a + b]; return a; }; // fib(3)=3, fib(4)=5, fib(5)=8 - the drone ladder
 const rung = x => Math.log(x) / Math.log(PHI);
 function mulberry32(seed) {
   return function() {
@@ -149,7 +149,7 @@ const S = {
 };
 const player = {
   pos: new THREE.Vector3(0, 0, 52), vy: 0, grounded: true,
-  yaw: Math.PI, pitch: -0.18, speed: 13,
+  yaw: 0, pitch: -0.18, speed: 13,
 };
 let world = null;         // per-level group + colliders + pickups
 const drones = [];
@@ -292,7 +292,7 @@ function buildLevel(idx) {
   });
 
   for (let i = 0; i < lvl.drones; i++) spawnDrone(rng, lvl);
-  player.pos.set(0, 0, 52); player.yaw = Math.PI; player.pitch = -0.18; player.vy = 0;
+  player.pos.set(0, 0, 52); player.yaw = 0; player.pitch = -0.18; player.vy = 0;
   S.hp = S.maxHp; S.clues = 0; S.artifact = false; S.signal = 0; S.beaconReady = false; S.wave = false;
   updateHUD();
   setObjective(`Recover 3 signal fragments + the golden artifact. Hostiles: ${lvl.drones} ${FACTIONS.map(f=>f.name).join('/')} machines.`);
