@@ -72,7 +72,7 @@
 <div id="dialog"><div class="who"></div><div class="line"></div><div class="hint">E / TAP — continue</div></div>
 
 <div class="overlay" id="start">
-  <div class="kick">FIELD LOG&nbsp;&nbsp;/&nbsp;&nbsp;002</div>
+  <div class="kick">FIELD LOG&nbsp;&nbsp;/&nbsp;&nbsp;003</div>
   <h1>VEIL</h1>
   <h2>OMNI RPG — ALL IN ONE</h2>
   <div class="chips">ONE WORLD&nbsp;&nbsp;/&nbsp;&nbsp;EVERY SYSTEM</div>
@@ -81,7 +81,8 @@
   <p>Roam the district on foot. Take quests from the golden statues, cut down the faction machines,
      gather the fragments, grow stronger with every level — then duel the WARDEN PRIME in the arena of rings.</p>
   <p style="opacity:.85">Move WASD · Camera mouse drag · Strike CLICK / F · Leap SPACE ×2 = φ-LEAP · Dash SHIFT · Talk E · Potion H · GODMODE G<br>
-     On touch: left stick, ATK, LEAP, DASH and TALK buttons.</p>
+     On touch: left stick, ATK, LEAP, DASH and TALK buttons.<br>
+     Xbox pad: LS move · RS camera · A leap ×2 · B dash · X talk · Y potion · RT strike · L3 sprint · R3 recenter · START pause.</p>
   <button class="btn" id="btn-start">ENTER THE DISTRICT</button>
 </div>
 <div class="overlay" id="pause"><h1>PAUSED</h1><h2>THE SIGNAL HOLDS</h2><button class="btn" id="btn-resume">RESUME</button><button class="btn" id="btn-pause-god" style="font-size:14px; padding:10px 22px;">GODMODE — OFF</button><button class="btn" id="btn-pause-new" style="font-size:14px; padding:10px 22px;">NEW GAME</button></div>
@@ -110,22 +111,37 @@ const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.3;
+renderer.toneMappingExposure = 1.25;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0618);
 scene.fog = new THREE.Fog(0x14092e, 55, 240);
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 900);
+{ // gradient sky dome — horizon glow rising to deep space
+  const cv = document.createElement('canvas'); cv.width = 16; cv.height = 256; const x = cv.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, '#040310'); g.addColorStop(0.45, '#14092e'); g.addColorStop(0.75, '#2a1060'); g.addColorStop(1, '#53257f');
+  x.fillStyle = g; x.fillRect(0, 0, 16, 256);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(720, 24, 16),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.BackSide, fog: false }));
+  scene.add(dome);
+}
 let composer = null;
 try {
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.65, 0.74));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.7, 0.7));
 } catch (e) { composer = null; }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); if (composer) composer.setSize(innerWidth, innerHeight); });
 
 // ---------- lights & sky ----------
 scene.add(new THREE.HemisphereLight(0x8a7bff, 0x1a0f2e, 1.5));
-const sun = new THREE.DirectionalLight(0xffe2a8, 2.0); sun.position.set(40, 80, 20); scene.add(sun);
+const sun = new THREE.DirectionalLight(0xffe2a8, 2.2); sun.position.set(40, 80, 20);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -70; sun.shadow.camera.right = 70; sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 280; sun.shadow.bias = -0.0006;
+scene.add(sun); scene.add(sun.target);
 const heroLight = new THREE.PointLight(0xffd977, 260, 60, 2); scene.add(heroLight);
 { // starfield + ringed golden planet
   const n = 1400, pos = new Float32Array(n * 3);
@@ -142,10 +158,12 @@ const heroLight = new THREE.PointLight(0xffd977, 260, 60, 2); scene.add(heroLigh
 // ---------- district ----------
 const WORLD_R = 120, colliders = [];
 function stoneTexture() {
-  const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d');
-  x.fillStyle = '#241743'; x.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 900; i++) { x.fillStyle = `rgba(${140+Math.random()*60|0},${110+Math.random()*40|0},255,${Math.random()*0.08})`; x.fillRect(Math.random()*128, Math.random()*128, 2, 2); }
-  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256; const x = cv.getContext('2d');
+  x.fillStyle = '#241743'; x.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2400; i++) { x.fillStyle = `rgba(${140+Math.random()*60|0},${110+Math.random()*40|0},255,${Math.random()*0.08})`; x.fillRect(Math.random()*256, Math.random()*256, 2, 2); }
+  x.strokeStyle = 'rgba(8,5,20,0.55)'; x.lineWidth = 3;
+  for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(i * 64, 0); x.lineTo(i * 64, 256); x.stroke(); x.beginPath(); x.moveTo(0, i * 64); x.lineTo(256, i * 64); x.stroke(); }
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(7, 7); t.anisotropy = 8; return t;
 }
 function windowTexture(base, lit) {
   const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const x = cv.getContext('2d');
@@ -154,7 +172,7 @@ function windowTexture(base, lit) {
   return new THREE.CanvasTexture(cv);
 }
 { const ground = new THREE.Mesh(new THREE.CircleGeometry(WORLD_R + 30, 48), new THREE.MeshStandardMaterial({ map: stoneTexture(), roughness: 0.95 }));
-  ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
   // plaza rings — the arena of rings at the district heart
   for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(10 + i * 5, 0.28, 8, 64), new THREE.MeshBasicMaterial({ color: i === 1 ? 0x35e0d0 : 0xe8b84b }));
     ring.rotation.x = Math.PI / 2; ring.position.y = 0.15; scene.add(ring); }
@@ -164,13 +182,13 @@ function windowTexture(base, lit) {
     const a = i * GA + 0.6, r = 34 + (i % 5) * 15 + Math.random() * 8;
     const x = Math.cos(a) * r, z = Math.sin(a) * r, h = 10 + ((i * 37) % 26);
     const m = new THREE.Mesh(new THREE.BoxGeometry(9, h, 9), new THREE.MeshStandardMaterial({ map: texes[i % 3], roughness: 0.85 }));
-    m.position.set(x, h / 2, z); m.rotation.y = a; scene.add(m);
+    m.position.set(x, h / 2, z); m.rotation.y = a; m.castShadow = true; m.receiveShadow = true; scene.add(m);
     colliders.push({ x, z, r: 7 });
   }
   // crystals + pillars
   for (let i = 0; i < 22; i++) { const a = i * GA * 2.3, r = 20 + (i % 6) * 14;
     const cr = new THREE.Mesh(new THREE.OctahedronGeometry(1 + (i % 3) * 0.5), new THREE.MeshStandardMaterial({ color: 0x7a3cff, emissive: 0x4a1fb0, emissiveIntensity: 0.9, roughness: 0.3 }));
-    cr.position.set(Math.cos(a) * r, 1.6, Math.sin(a) * r); scene.add(cr); }
+    cr.position.set(Math.cos(a) * r, 1.6, Math.sin(a) * r); cr.castShadow = true; scene.add(cr); }
   // world wall — a ring of light
   const wall = new THREE.Mesh(new THREE.TorusGeometry(WORLD_R, 0.5, 8, 90), new THREE.MeshBasicMaterial({ color: 0x57448f }));
   wall.rotation.x = Math.PI / 2; wall.position.y = 1; scene.add(wall);
@@ -207,6 +225,7 @@ const hero = new THREE.Group();
   const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.5), new THREE.MeshStandardMaterial({ color: 0x7a3cff, emissive: 0x3a1470, emissiveIntensity: 0.7, side: THREE.DoubleSide }));
   cape.position.set(0, 1.3, -0.5); cape.rotation.x = 0.25; cape.name = 'cape'; hero.add(cape);
 }
+hero.traverse(o => { if (o.isMesh) o.castShadow = true; });
 scene.add(hero);
 
 // ---------- fx: particles & beams ----------
@@ -463,7 +482,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); doLeap(); }
   if (e.code === 'KeyE' || e.code === 'Enter') interact();
   if (e.code === 'KeyF') swing();
-  if (e.code === 'KeyH') { if (S.potions > 0 && S.hp < S.maxHp) { S.potions--; S.hp = Math.min(S.maxHp, S.hp + 45); sfxPickup(); burst(player.pos.clone().setY(1.4), 0x35e0d0, 12, 5); } }
+  if (e.code === 'KeyH') usePotion();
   if (e.code === 'KeyG') { S.god = !S.god; banner(S.god ? 'GODMODE' : 'MORTAL', S.god ? 'the district cannot touch you' : ''); }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
@@ -492,6 +511,36 @@ $('btn-atk').addEventListener('click', () => swing());
 $('btn-leap').addEventListener('click', () => doLeap());
 $('btn-dash').addEventListener('click', () => tryDash());
 $('btn-talk').addEventListener('click', () => interact());
+
+// ---------- gamepad — full Xbox controller support ----------
+const pad = { x: 0, y: 0, sprint: false, prev: [] };
+addEventListener('gamepadconnected', e => banner('CONTROLLER LINKED', (e.gamepad.id || 'gamepad').slice(0, 30)));
+addEventListener('gamepaddisconnected', () => { pad.x = pad.y = 0; pad.sprint = false; });
+function pollPad(dt) {
+  const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null; for (const g of gps) if (g) { gp = g; break; }
+  if (!gp) { pad.x = pad.y = 0; pad.sprint = false; return; }
+  const dz = v => Math.abs(v) < 0.16 ? 0 : v;
+  pad.x = dz(gp.axes[0] || 0); pad.y = dz(gp.axes[1] || 0);
+  const rx = dz(gp.axes[2] || 0), ry = dz(gp.axes[3] || 0);
+  if (S.started && !S.paused && !S.over) {
+    camYaw -= rx * dt * 2.6; camPitch = clamp(camPitch + ry * dt * 1.9, -0.1, 1.1);
+  }
+  pad.sprint = !!(gp.buttons[10] && gp.buttons[10].pressed);
+  const pressed = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const hit = i => pressed(i) && !pad.prev[i];
+  if (hit(9) && S.started) togglePause();
+  if (S.started && !S.paused && !S.over) {
+    if (hit(0)) doLeap();
+    if (hit(1) || hit(4)) tryDash();
+    if (hit(2)) interact();
+    if (hit(3)) usePotion();
+    if (hit(7) || hit(5)) swing();
+    if (hit(11)) camYaw = player.face + Math.PI;
+  } else if (!S.started && hit(0)) { $('btn-start').click(); }
+  pad.prev = gp.buttons.map(b => b.pressed);
+}
+function usePotion() { if (S.potions > 0 && S.hp < S.maxHp) { S.potions--; S.hp = Math.min(S.maxHp, S.hp + 45); sfxPickup(); burst(player.pos.clone().setY(1.4), 0x35e0d0, 12, 5); } }
 function doLeap() {
   if (S.over) return;
   if (player.grounded || player.coyote > 0) { player.vy = 11.5; player.grounded = false; player.jumps = 1; tone(330, 520, 0.12, 'sine', 0.06); }
@@ -542,11 +591,11 @@ function playerTick(dt) {
   let ix = 0, iz = 0;
   if (keys.KeyW || keys.ArrowUp) iz -= 1; if (keys.KeyS || keys.ArrowDown) iz += 1;
   if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
-  ix += stickVec.x; iz += stickVec.y;
+  ix += stickVec.x + pad.x; iz += stickVec.y + pad.y;
   const m = Math.hypot(ix, iz); if (m > 1) { ix /= m; iz /= m; }
   const sin = Math.sin(camYaw), cos = Math.cos(camYaw);
   const wx = ix * cos - iz * sin, wz = -ix * sin - iz * cos;
-  const speed = (keys.ShiftLeft || keys.ShiftRight) ? 13 : 8.2;
+  const speed = (keys.ShiftLeft || keys.ShiftRight || pad.sprint) ? 13 : 8.2;
   if (player.dashT > 0) { player.dashT -= dt; player.pos.x += Math.sin(player.face) * 34 * dt; player.pos.z += Math.cos(player.face) * 34 * dt; }
   player.dashCd = Math.max(0, player.dashCd - dt);
   player.pos.x += wx * speed * dt; player.pos.z += wz * speed * dt;
@@ -571,6 +620,8 @@ function playerTick(dt) {
   lance.rotation.x = player.swingT > 0 ? -2.2 * Math.sin((0.32 - player.swingT) / 0.32 * Math.PI) : Math.sin(S.time * 2) * 0.06;
   hero.getObjectByName('cape').rotation.x = 0.25 + (m > 0.12 ? 0.3 : 0) + Math.sin(S.time * 3) * 0.05;
   heroLight.position.set(player.pos.x, player.pos.y + 4, player.pos.z);
+  sun.position.set(player.pos.x + 40, player.pos.y + 80, player.pos.z + 20);
+  sun.target.position.copy(player.pos);
   // fragments & cache
   for (const f of frags) { if (f.got) continue; f.mesh.rotation.y += dt * 2;
     if (player.pos.distanceTo(f.mesh.position.clone().setY(player.pos.y)) < 2.4) { f.got = true; scene.remove(f.mesh); scene.remove(f.shaft);
@@ -588,6 +639,7 @@ function playerTick(dt) {
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+  pollPad(dt);
   if (S.started && !S.paused && !S.over) {
     S.time += dt;
     playerTick(dt); foeTick(dt);
