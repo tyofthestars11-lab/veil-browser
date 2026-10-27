@@ -72,7 +72,7 @@
 <div id="dialog"><div class="who"></div><div class="line"></div><div class="hint">E / TAP — continue</div></div>
 
 <div class="overlay" id="start">
-  <div class="kick">FIELD LOG&nbsp;&nbsp;/&nbsp;&nbsp;003</div>
+  <div class="kick">FIELD LOG&nbsp;&nbsp;/&nbsp;&nbsp;004</div>
   <h1>VEIL</h1>
   <h2>OMNI RPG — ALL IN ONE</h2>
   <div class="chips">ONE WORLD&nbsp;&nbsp;/&nbsp;&nbsp;EVERY SYSTEM</div>
@@ -85,7 +85,7 @@
      Xbox pad: LS move · RS camera · A leap ×2 · B dash · X talk · Y potion · RT strike · L3 sprint · R3 recenter · START pause.</p>
   <button class="btn" id="btn-start">ENTER THE DISTRICT</button>
 </div>
-<div class="overlay" id="pause"><h1>PAUSED</h1><h2>THE SIGNAL HOLDS</h2><button class="btn" id="btn-resume">RESUME</button><button class="btn" id="btn-pause-god" style="font-size:14px; padding:10px 22px;">GODMODE — OFF</button><button class="btn" id="btn-pause-new" style="font-size:14px; padding:10px 22px;">NEW GAME</button></div>
+<div class="overlay" id="pause"><h1>PAUSED</h1><h2>THE SIGNAL HOLDS</h2><button class="btn" id="btn-resume">RESUME</button><button class="btn" id="btn-pause-god" style="font-size:14px; padding:10px 22px;">GODMODE — OFF</button><button class="btn" id="btn-pause-new" style="font-size:14px; padding:10px 22px;">NEW GAME</button><button class="btn" id="btn-pause-title" style="font-size:14px; padding:10px 22px;">QUIT TO TITLE</button></div>
 <div class="overlay" id="end"><h1 id="end-title">SIGNAL SEALED</h1><h2 id="end-sub"></h2><p id="end-body"></p><button class="btn" id="btn-again">PLAY AGAIN</button></div>
 
 <div id="stick"><div id="nub"></div></div>
@@ -671,6 +671,7 @@ $('btn-start').addEventListener('click', () => {
 $('btn-resume').addEventListener('click', togglePause);
 $('btn-pause-god').addEventListener('click', () => { S.god = !S.god; $('btn-pause-god').textContent = S.god ? 'GODMODE — ON' : 'GODMODE — OFF'; });
 $('btn-pause-new').addEventListener('click', () => location.reload());
+$('btn-pause-title').addEventListener('click', () => location.reload());
 $('btn-again').addEventListener('click', () => location.reload());
 addEventListener('pointerdown', () => { if (S.started) ac(); }, { once: true });
 </script>
