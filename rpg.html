@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VEIL: ALL IN ONE — an AAA RPG</title>
+<style>
+  html,body{margin:0;padding:0;background:#07040f;overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#e9e2ff;}
+  #c{position:fixed;inset:0;display:block;}
+  .hud{position:fixed;z-index:5;pointer-events:none;text-shadow:0 1px 3px #000;}
+  #hud-tl{top:12px;left:14px;}
+  #bar-hp{width:min(300px,42vw);height:14px;background:#1a1030;border:1px solid #e8b84b;border-radius:7px;overflow:hidden;}
+  #fill-hp{height:100%;width:100%;background:linear-gradient(90deg,#ff4455,#e8b84b);transition:width .18s;}
+  #bar-xp{width:min(300px,42vw);height:7px;background:#140b28;border:1px solid #35e0d0;border-radius:4px;overflow:hidden;margin-top:4px;}
+  #fill-xp{height:100%;width:0%;background:#35e0d0;transition:width .25s;}
+  #stats{font-size:13px;letter-spacing:1px;margin-top:5px;color:#ffe9a8;}
+  #hud-center{top:12px;left:50%;transform:translateX(-50%);text-align:center;width:min(680px,92vw);}
+  #objective{font-size:15px;color:#e8b84b;letter-spacing:.5px;}
+  #statusline{font-size:12px;color:#9fd8ff;margin-top:3px;letter-spacing:2px;}
+  #questlog{font-size:12px;color:#cdbcf5;margin-top:2px;letter-spacing:1px;}
+  #hud-tr{top:12px;right:14px;text-align:right;}
+  #minimap{background:rgba(10,6,24,.72);border:1px solid #57448f;border-radius:8px;}
+  #dialog{position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:min(620px,92vw);background:rgba(12,7,28,.92);border:1px solid #e8b84b;border-radius:12px;padding:14px 18px;z-index:8;display:none;}
+  #dialog .who{color:#e8b84b;letter-spacing:2px;font-size:12px;}
+  #dialog .line{font-size:16px;margin-top:4px;line-height:1.45;}
+  #dialog .hint{font-size:11px;color:#9fd8ff;margin-top:6px;letter-spacing:1px;}
+  #bossbar{position:fixed;top:74px;left:50%;transform:translateX(-50%);width:min(520px,72vw);z-index:6;text-align:center;display:none;}
+  #bossname{font-size:12px;letter-spacing:3px;color:#ffb3ab;}
+  #bossouter{height:10px;background:#200a12;border:1px solid #ff5566;border-radius:6px;overflow:hidden;}
+  #bossfill{height:100%;width:100%;background:linear-gradient(90deg,#ff2233,#e8b84b);}
+  #banner{position:fixed;top:34%;left:50%;transform:translateX(-50%);z-index:7;text-align:center;pointer-events:none;opacity:0;transition:opacity .4s;}
+  #banner .big{font-size:34px;letter-spacing:6px;color:#ffd977;text-shadow:0 2px 14px #000;}
+  #banner .sub{font-size:14px;letter-spacing:2px;color:#cdbcf5;}
+  #vignette{position:fixed;inset:0;z-index:4;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(255,20,40,.55) 100%);opacity:0;transition:opacity .12s;}
+  .overlay{position:fixed;inset:0;z-index:10;background:radial-gradient(ellipse at 50% 35%,rgba(38,18,80,.88),rgba(5,3,12,.96));display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;}
+  .overlay h1{font-size:min(64px,13vw);letter-spacing:14px;margin:2px 0;color:#ffd977;text-shadow:0 0 34px rgba(232,184,75,.5);}
+  .overlay h2{font-size:min(17px,4.4vw);letter-spacing:5px;color:#9fd8ff;margin:2px 0 10px;font-weight:normal;}
+  .overlay p{max-width:640px;line-height:1.55;font-size:15px;color:#d9cff7;}
+  .btn{pointer-events:auto;cursor:pointer;background:linear-gradient(180deg,#ffd977,#c9932b);color:#1a1002;border:none;border-radius:10px;padding:14px 34px;font-size:17px;letter-spacing:3px;font-family:inherit;font-weight:bold;margin-top:14px;box-shadow:0 4px 22px rgba(232,184,75,.35);}
+  .btn:hover{filter:brightness(1.1);}
+  .tbtn{position:fixed;z-index:6;pointer-events:auto;width:64px;height:64px;border-radius:50%;border:1px solid #e8b84b;background:rgba(20,12,40,.66);color:#ffd977;font-family:inherit;font-size:12px;letter-spacing:1px;display:none;}
+  #btn-atk{right:22px;bottom:96px;background:rgba(10,60,58,.7);border-color:#35e0d0;color:#bffcff;}
+  #btn-leap{right:96px;bottom:30px;}
+  #btn-dash{right:22px;bottom:176px;}
+  #btn-talk{left:22px;bottom:176px;display:none;border-color:#35e0d0;color:#bffcff;}
+  #stick{position:fixed;left:22px;bottom:26px;width:118px;height:118px;border-radius:50%;border:1px solid #57448f;background:rgba(16,10,34,.5);z-index:6;display:none;pointer-events:auto;}
+  #nub{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(232,184,75,.5);transform:translate(-50%,-50%);}
+  #end,#pause{display:none;}
+  .kick{letter-spacing:6px;font-size:12px;color:#9fd8ff;opacity:.85;}
+  .chips{letter-spacing:3px;font-size:13px;color:#35e0d0;margin:8px 0 2px;}
+  .goldline{font-size:17px;color:#fff;margin:4px 0 8px;}
+  .violet{letter-spacing:3px;font-size:12px;color:#c77dff;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+
+<div class="hud" id="hud-tl">
+  <div id="bar-hp"><div id="fill-hp"></div></div>
+  <div id="bar-xp"><div id="fill-xp"></div></div>
+  <div id="stats">LV 1 · GOLD 0 · POTIONS 1 (H)</div>
+</div>
+<div class="hud" id="hud-center">
+  <div id="objective">Speak with the Keeper.</div>
+  <div id="statusline">ROUTE ◈ ◇ ◇ · THREAT LOW · DISTRICT 0%</div>
+  <div id="questlog"></div>
+</div>
+<div class="hud" id="hud-tr"><canvas id="minimap" width="118" height="118"></canvas></div>
+<div id="bossbar"><div id="bossname">WARDEN PRIME</div><div id="bossouter"><div id="bossfill"></div></div></div>
+<div id="banner"><div class="big"></div><div class="sub"></div></div>
+<div id="dialog"><div class="who"></div><div class="line"></div><div class="hint">E / TAP — continue</div></div>
+
+<div class="overlay" id="start">
+  <div class="kick">FIELD LOG&nbsp;&nbsp;/&nbsp;&nbsp;002</div>
+  <h1>VEIL</h1>
+  <h2>ALL IN ONE — AN AAA RPG</h2>
+  <div class="chips">ONE WORLD&nbsp;&nbsp;/&nbsp;&nbsp;EVERY SYSTEM</div>
+  <p class="goldline">You are the Signal-Runner. The district is the game — all of it, in one.</p>
+  <div class="violet">QUESTS · COMBAT · LEVELS · LOOT · FACTIONS · THE WARDEN</div>
+  <p>Roam the district on foot. Take quests from the golden statues, cut down the faction machines,
+     gather the fragments, grow stronger with every level — then duel the WARDEN PRIME in the arena of rings.</p>
+  <p style="opacity:.85">Move WASD · Camera mouse drag · Strike CLICK / F · Leap SPACE ×2 = φ-LEAP · Dash SHIFT · Talk E · Potion H · GODMODE G<br>
+     On touch: left stick, ATK, LEAP, DASH and TALK buttons.</p>
+  <button class="btn" id="btn-start">ENTER THE DISTRICT</button>
+</div>
+<div class="overlay" id="pause"><h1>PAUSED</h1><h2>THE SIGNAL HOLDS</h2><button class="btn" id="btn-resume">RESUME</button></div>
+<div class="overlay" id="end"><h1 id="end-title">SIGNAL SEALED</h1><h2 id="end-sub"></h2><p id="end-body"></p><button class="btn" id="btn-again">PLAY AGAIN</button></div>
+
+<div id="stick"><div id="nub"></div></div>
+<button class="tbtn" id="btn-atk">ATK</button>
+<button class="tbtn" id="btn-leap">LEAP</button>
+<button class="tbtn" id="btn-dash">DASH</button>
+<button class="tbtn" id="btn-talk">TALK</button>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const PHI = (1 + Math.sqrt(5)) / 2, GA = Math.PI * (3 - Math.sqrt(5));
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0618);
+scene.fog = new THREE.Fog(0x14092e, 55, 240);
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 900);
+let composer = null;
+try {
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.65, 0.74));
+} catch (e) { composer = null; }
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); if (composer) composer.setSize(innerWidth, innerHeight); });
+
+// ---------- lights & sky ----------
+scene.add(new THREE.HemisphereLight(0x8a7bff, 0x1a0f2e, 1.5));
+const sun = new THREE.DirectionalLight(0xffe2a8, 2.0); sun.position.set(40, 80, 20); scene.add(sun);
+const heroLight = new THREE.PointLight(0xffd977, 260, 60, 2); scene.add(heroLight);
+{ // starfield + ringed golden planet
+  const n = 1400, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { const r = 380 + Math.random() * 220, th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 0.95);
+    pos[i*3] = r * Math.sin(ph) * Math.cos(th); pos[i*3+1] = r * Math.cos(ph) + 10; pos[i*3+2] = r * Math.sin(ph) * Math.sin(th); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xd8c9ff, size: 2.0, sizeAttenuation: false, fog: false })));
+  const planet = new THREE.Mesh(new THREE.SphereGeometry(30, 32, 32), new THREE.MeshStandardMaterial({ color: 0xd9a83c, emissive: 0x8a5f14, emissiveIntensity: 0.7, roughness: 0.8 }));
+  planet.position.set(-170, 120, -300); scene.add(planet);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(46, 1.6, 8, 80), new THREE.MeshBasicMaterial({ color: 0xffd977 }));
+  ring.position.copy(planet.position); ring.rotation.x = Math.PI / 2.6; scene.add(ring);
+}
+
+// ---------- district ----------
+const WORLD_R = 120, colliders = [];
+function stoneTexture() {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d');
+  x.fillStyle = '#241743'; x.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 900; i++) { x.fillStyle = `rgba(${140+Math.random()*60|0},${110+Math.random()*40|0},255,${Math.random()*0.08})`; x.fillRect(Math.random()*128, Math.random()*128, 2, 2); }
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+}
+function windowTexture(base, lit) {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const x = cv.getContext('2d');
+  x.fillStyle = base; x.fillRect(0, 0, 64, 128);
+  for (let r = 0; r < 12; r++) for (let c = 0; c < 5; c++) { x.fillStyle = Math.random() < 0.42 ? lit : 'rgba(10,8,24,0.9)'; x.fillRect(6 + c * 12, 8 + r * 10, 7, 5); }
+  return new THREE.CanvasTexture(cv);
+}
+{ const ground = new THREE.Mesh(new THREE.CircleGeometry(WORLD_R + 30, 48), new THREE.MeshStandardMaterial({ map: stoneTexture(), roughness: 0.95 }));
+  ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  // plaza rings — the arena of rings at the district heart
+  for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(10 + i * 5, 0.28, 8, 64), new THREE.MeshBasicMaterial({ color: i === 1 ? 0x35e0d0 : 0xe8b84b }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.15; scene.add(ring); }
+  // buildings around the plaza, golden-angle placement
+  const texes = [windowTexture('#1d1436', '#ffd977'), windowTexture('#241238', '#35e0d0'), windowTexture('#170f2c', '#c77dff')];
+  for (let i = 0; i < 34; i++) {
+    const a = i * GA + 0.6, r = 34 + (i % 5) * 15 + Math.random() * 8;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, h = 10 + ((i * 37) % 26);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(9, h, 9), new THREE.MeshStandardMaterial({ map: texes[i % 3], roughness: 0.85 }));
+    m.position.set(x, h / 2, z); m.rotation.y = a; scene.add(m);
+    colliders.push({ x, z, r: 7 });
+  }
+  // crystals + pillars
+  for (let i = 0; i < 22; i++) { const a = i * GA * 2.3, r = 20 + (i % 6) * 14;
+    const cr = new THREE.Mesh(new THREE.OctahedronGeometry(1 + (i % 3) * 0.5), new THREE.MeshStandardMaterial({ color: 0x7a3cff, emissive: 0x4a1fb0, emissiveIntensity: 0.9, roughness: 0.3 }));
+    cr.position.set(Math.cos(a) * r, 1.6, Math.sin(a) * r); scene.add(cr); }
+  // world wall — a ring of light
+  const wall = new THREE.Mesh(new THREE.TorusGeometry(WORLD_R, 0.5, 8, 90), new THREE.MeshBasicMaterial({ color: 0x57448f }));
+  wall.rotation.x = Math.PI / 2; wall.position.y = 1; scene.add(wall);
+}
+function collide(p, rad) {
+  for (const c of colliders) { const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = c.r + rad;
+    if (d < m && d > 0.001) { p.x = c.x + dx / d * m; p.z = c.z + dz / d * m; } }
+  const d = Math.hypot(p.x, p.z); if (d > WORLD_R - 2) { p.x *= (WORLD_R - 2) / d; p.z *= (WORLD_R - 2) / d; }
+}
+// ---------- state ----------
+const S = { hp: 100, maxHp: 100, xp: 0, xlv: 1, gold: 0, potions: 1, kills: 0,
+  frags: 0, started: false, over: false, god: false, stage: 0, culls: 0, cache: false,
+  time: 0, hits: 0, swings: 0 };
+const XPNEED = lv => Math.round(20 * Math.pow(PHI, lv - 1));
+const player = { pos: new THREE.Vector3(0, 0, 26), vel: new THREE.Vector3(), vy: 0, grounded: true,
+  jumps: 0, coyote: 0, face: Math.PI, swingT: 0, hurtT: 0, dashT: 0, dashCd: 0, landDip: 0 };
+let camYaw = Math.PI, camPitch = 0.32, camDist = 11;
+
+// ---------- hero — the Signal-Runner ----------
+const hero = new THREE.Group();
+{
+  const gold = new THREE.MeshStandardMaterial({ color: 0xe8b84b, emissive: 0x9a6d10, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.6 });
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x2a1b52, emissive: 0x1a0f3a, emissiveIntensity: 0.5, roughness: 0.8 });
+  const glow = new THREE.MeshBasicMaterial({ color: 0x35e0d0 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 0.9, 4, 12), cloth); body.position.y = 1.15; hero.add(body);
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 12), glow); chest.position.set(0, 1.45, 0.42); hero.add(chest);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 14), gold); head.position.y = 2.15; hero.add(head);
+  const crown = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.07, 8, 20), new THREE.MeshBasicMaterial({ color: 0xffd977 }));
+  crown.position.y = 2.32; crown.rotation.x = Math.PI / 2.4; hero.add(crown);
+  const lance = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 6), gold); lance.add(shaft);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 8), glow); tip.position.y = 1.35; lance.add(tip);
+  lance.position.set(0.75, 1.3, 0.2); lance.rotation.z = -0.5; lance.name = 'lance'; hero.add(lance);
+  const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 1.5), new THREE.MeshStandardMaterial({ color: 0x7a3cff, emissive: 0x3a1470, emissiveIntensity: 0.7, side: THREE.DoubleSide }));
+  cape.position.set(0, 1.3, -0.5); cape.rotation.x = 0.25; cape.name = 'cape'; hero.add(cape);
+}
+scene.add(hero);
+
+// ---------- fx: particles & beams ----------
+const particles = [], beams = [];
+const _v = new THREE.Vector3();
+function burst(p, color, n = 10, spd = 6) {
+  const g = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), vel = [];
+  for (let i = 0; i < n; i++) { pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = p.z;
+    vel.push(new THREE.Vector3((Math.random()-0.5)*spd, Math.random()*spd*0.9, (Math.random()-0.5)*spd)); }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color, size: 0.35, transparent: true }));
+  scene.add(pts); particles.push({ points: pts, vel, life: 1 });
+}
+function beam(a, b, color = 0x35e0d0) {
+  const g = new THREE.BufferGeometry().setFromPoints([a, b]);
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
+  scene.add(line); beams.push({ line, life: 0.08 });
+}
+function banner(big, sub = '', hold = 1.6) {
+  const b = $('banner'); b.querySelector('.big').textContent = big; b.querySelector('.sub').textContent = sub;
+  b.style.opacity = 1; clearTimeout(banner._t); banner._t = setTimeout(() => b.style.opacity = 0, hold * 1000);
+}
+
+// ---------- audio ----------
+let AC = null;
+function ac() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } } if (AC && AC.state === 'suspended') AC.resume(); return AC; }
+function tone(f0, f1, dur, type = 'sine', vol = 0.12) {
+  const c = ac(); if (!c) return; const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, c.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), c.currentTime + dur);
+  g.gain.setValueAtTime(vol, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+  o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + dur);
+}
+const sfxSwing = () => tone(300 + Math.random() * 80, 90, 0.14, 'sawtooth', 0.05);
+const sfxHit = () => tone(180, 60, 0.12, 'square', 0.09);
+const sfxHurt = () => tone(120, 50, 0.22, 'sawtooth', 0.12);
+const sfxPickup = () => { tone(660, 660, 0.07, 'sine', 0.08); setTimeout(() => tone(990, 990, 0.1, 'sine', 0.08), 60); };
+const sfxLevel = () => [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, f, 0.22, 'triangle', 0.1), i * 70));
+const sfxQuest = () => [392, 523, 659].forEach((f, i) => setTimeout(() => tone(f, f, 0.18, 'triangle', 0.09), i * 80));
+const sfxBoss = () => tone(55, 38, 1.1, 'sawtooth', 0.16);
+let ambTimer = null;
+function ambient() { // THE SCORE — Dm–Bb–F–C pad, 112 BPM eighth pulse
+  const roots = [146.83, 116.54, 87.31, 130.81]; let bar = 0;
+  const step = () => { if (!S.started || S.over) return; const c = ac(); if (!c) return;
+    const f = roots[bar % 4]; tone(f, f, 1.6, 'triangle', 0.05); tone(f * PHI, f * PHI, 1.6, 'sine', 0.03); bar++; };
+  step(); ambTimer = setInterval(step, 60 / 112 * 4 * 1000);
+}
+// ---------- enemies — faction ground machines ----------
+const FACTIONS = [
+  { name: 'VOID', color: 0x9b30ff }, { name: 'SCAVENGER', color: 0xff8c1a },
+  { name: 'GUARDIAN', color: 0x1ae8c8 }, { name: 'REMNANT', color: 0xb8b8c8 }];
+const foes = [], bolts = [], drops = [];
+let rngState = 12345;
+const rnd = () => (rngState = (rngState * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+function spawnFoe(x, z, opts = {}) {
+  const f = FACTIONS[Math.floor(rnd() * 4)];
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.95), new THREE.MeshStandardMaterial({ color: f.color, emissive: f.color, emissiveIntensity: 0.85, roughness: 0.4 }));
+  body.rotation.x = Math.PI / 4; body.position.y = 1.15; g.add(body);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), new THREE.MeshBasicMaterial({ color: 0xff2233 }));
+  eye.position.set(0, 1.3, -0.8); g.add(eye);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 0.35, 6), new THREE.MeshStandardMaterial({ color: 0x191029, roughness: 0.7 }));
+  base.position.y = 0.35; g.add(base);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.06, 6, 24), new THREE.MeshBasicMaterial({ color: f.color }));
+  halo.rotation.x = Math.PI / 2; halo.position.y = 0.6; g.add(halo);
+  g.position.set(x, 0, z); scene.add(g);
+  const boss = !!opts.boss;
+  const foe = { mesh: g, body, hp: boss ? 420 : (opts.hp || 34) * (1 + (S.xlv - 1) * 0.12), maxHp: boss ? 420 : (opts.hp || 34),
+    dmg: boss ? 16 : 8, speed: boss ? 5.2 : 3.4 + rnd() * 1.6, boss, faction: f,
+    state: 'patrol', wp: null, wpT: 0, atkT: 0, bob: rnd() * 6, quest: !!opts.quest };
+  if (boss) { g.scale.setScalar(2.3); foe.maxHp = foe.hp = 420; }
+  foes.push(foe); return foe;
+}
+function spawnPack(cx, cz, n, quest = false) {
+  for (let i = 0; i < n; i++) { const a = i * GA, r = 5 + i * 2.2;
+    spawnFoe(cx + Math.cos(a) * r, cz + Math.sin(a) * r, { quest }); }
+}
+function dropLoot(p, kind) {
+  let mesh;
+  if (kind === 'gold') mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.32), new THREE.MeshBasicMaterial({ color: 0xffd23e }));
+  else if (kind === 'heart') mesh = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 10), new THREE.MeshBasicMaterial({ color: 0xff5566 }));
+  else mesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.3, 3, 8), new THREE.MeshBasicMaterial({ color: 0x35e0d0 }));
+  mesh.position.copy(p); mesh.position.y = 0.7; scene.add(mesh);
+  drops.push({ mesh, kind, t: 0 });
+}
+function gainXP(n) {
+  S.xp += n;
+  while (S.xp >= XPNEED(S.xlv)) { S.xp -= XPNEED(S.xlv); S.xlv++;
+    S.maxHp = Math.round(S.maxHp * 1.21); S.hp = Math.min(S.maxHp, S.hp + Math.round(S.maxHp * 0.4));
+    banner('LEVEL ' + S.xlv, 'the signal grows — hull, strike and stride rise'); sfxLevel(); burst(player.pos.clone().setY(1.6), 0xffd977, 22, 7); }
+}
+function killFoe(foe) {
+  burst(foe.mesh.position.clone().setY(1.3), foe.faction.color, 18, 8);
+  scene.remove(foe.mesh); foes.splice(foes.indexOf(foe), 1);
+  S.kills++; gainXP(foe.boss ? 120 : 12);
+  const p = foe.mesh.position.clone();
+  dropLoot(p, 'gold'); if (rnd() < 0.55) dropLoot(p.clone().add(_v.set(1.4, 0, 0.6)), 'gold');
+  if (rnd() < 0.3) dropLoot(p.clone().add(_v.set(-1.2, 0, 0.8)), 'heart');
+  if (rnd() < 0.12) dropLoot(p.clone().add(_v.set(0.4, 0, -1.3)), 'potion');
+  if (foe.boss) onBossDown(); else if (foe.quest) onQuestKill();
+}
+function hurtPlayer(dmg) {
+  if (S.god || player.hurtT > 0 || S.over) return;
+  S.hp -= dmg; player.hurtT = 0.5; sfxHurt();
+  $('vignette').style.opacity = 0.9; setTimeout(() => $('vignette').style.opacity = 0, 160);
+  if (S.hp <= 0) { S.hp = 0; gameOver(false); }
+}
+// player attacks
+function swing() {
+  if (player.swingT > 0 || S.over) return;
+  player.swingT = 0.32; S.swings++; sfxSwing();
+  const fx = Math.sin(player.face), fz = Math.cos(player.face);
+  let hitAny = false;
+  for (const foe of [...foes]) { const d = foe.mesh.position.clone().sub(player.pos); d.y = 0;
+    const dist = d.length(), dot = dist > 0.01 ? (d.x * fx + d.z * fz) / dist : 1;
+    if (dist < 4.4 && dot > 0.25) { foe.hp -= S.god ? 260 : 26 + S.xlv * 3; hitAny = true;
+      foe.mesh.position.add(d.normalize().multiplyScalar(1.2)); burst(foe.mesh.position.clone().setY(1.4), 0xffffff, 6, 5);
+      if (foe.hp <= 0) killFoe(foe); } }
+  // ranged bolt on the same strike — the lance throws light
+  const dir = new THREE.Vector3(fx, 0.25, fz).normalize();
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), new THREE.MeshBasicMaterial({ color: 0x9ffcf2 }));
+  b.position.copy(player.pos).add(_v.set(fx * 0.8, 1.5, fz * 0.8)); scene.add(b);
+  bolts.push({ mesh: b, vel: dir.multiplyScalar(46), life: 0.7 });
+  if (hitAny) { S.hits++; sfxHit(); }
+}
+function foeTick(dt) {
+  for (const foe of [...foes]) {
+    const to = player.pos.clone().sub(foe.mesh.position); to.y = 0; const dist = to.length();
+    foe.atkT -= dt; foe.mesh.children[1].position.z = -0.8;
+    foe.body.rotation.y += dt * 1.4; foe.mesh.position.y = Math.abs(Math.sin(S.time * 3 + foe.bob)) * 0.14;
+    if (dist < 26) foe.state = 'chase'; else if (dist > 34 && foe.state === 'chase') foe.state = 'patrol';
+    if (foe.state === 'chase') {
+      if (dist > (foe.boss ? 3.4 : 2.4)) foe.mesh.position.add(to.normalize().multiplyScalar(foe.speed * dt));
+      foe.mesh.lookAt(player.pos.x, 0, player.pos.z);
+      if (dist < (foe.boss ? 4.2 : 3) && foe.atkT <= 0) { foe.atkT = foe.boss ? 0.9 : 1.15;
+        beam(foe.mesh.position.clone().setY(1.4), player.pos.clone().setY(1.3), 0xff3344); hurtPlayer(foe.dmg); }
+    } else {
+      foe.wpT -= dt;
+      if (!foe.wp || foe.wpT <= 0) { const a = rnd() * Math.PI * 2, r = 6 + rnd() * 14;
+        foe.wp = new THREE.Vector3(clamp(foe.mesh.position.x + Math.cos(a) * r, -WORLD_R + 6, WORLD_R - 6), 0, clamp(foe.mesh.position.z + Math.sin(a) * r, -WORLD_R + 6, WORLD_R - 6)); foe.wpT = 4; }
+      const w = foe.wp.clone().sub(foe.mesh.position); w.y = 0;
+      if (w.length() > 1) { foe.mesh.position.add(w.normalize().multiplyScalar(foe.speed * 0.4 * dt)); foe.mesh.lookAt(foe.wp.x, 0, foe.wp.z); }
+    }
+    collide(foe.mesh.position, foe.boss ? 2.4 : 1.1);
+  }
+  for (const b of [...bolts]) { b.life -= dt; b.mesh.position.addScaledVector(b.vel, dt);
+    let dead = b.life <= 0;
+    if (!dead) for (const foe of [...foes]) { if (b.mesh.position.distanceTo(foe.mesh.position.clone().setY(1.3)) < (foe.boss ? 2.6 : 1.5)) {
+      foe.hp -= S.god ? 200 : 16 + S.xlv * 2; S.hits++; sfxHit(); burst(b.mesh.position, 0x9ffcf2, 5, 4);
+      if (foe.hp <= 0) killFoe(foe); dead = true; break; } }
+    if (dead) { scene.remove(b.mesh); bolts.splice(bolts.indexOf(b), 1); } }
+  for (const d of [...drops]) { d.t += dt; d.mesh.rotation.y += dt * 2.4; d.mesh.position.y = 0.7 + Math.sin(d.t * 3) * 0.14;
+    const dist = d.mesh.position.distanceTo(player.pos.clone().setY(0.7));
+    if (dist < 6) d.mesh.position.lerp(player.pos.clone().setY(0.8), dt * 5);
+    if (dist < 1.3) { scene.remove(d.mesh); drops.splice(drops.indexOf(d), 1); sfxPickup();
+      if (d.kind === 'gold') S.gold += 9; else if (d.kind === 'heart') S.hp = Math.min(S.maxHp, S.hp + 25); else S.potions++; } }
+}
+// ---------- statues, quests, the Warden ----------
+function statue(x, z, color, name) {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.1, 5.4, 6), new THREE.MeshStandardMaterial({ color: 0x2a1b52, emissive: color, emissiveIntensity: 0.25, roughness: 0.5 }));
+  m.position.y = 2.7; g.add(m);
+  const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.65), new THREE.MeshBasicMaterial({ color }));
+  orb.position.y = 5.9; orb.name = 'orb'; g.add(orb);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 26, 6, 1, true), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, side: THREE.DoubleSide }));
+  shaft.position.y = 13; g.add(shaft);
+  g.position.set(x, 0, z); scene.add(g); colliders.push({ x, z, r: 1.6 });
+  return { mesh: g, orb, x, z, name };
+}
+const keeper = statue(0, 14, 0xe8b84b, 'THE KEEPER');
+const wardenStatue = statue(-46, -30, 0xc77dff, 'THE SEER');
+const cacheStatue = statue(52, 34, 0x35e0d0, 'THE CARTOGRAPHER');
+const frags = [];
+function placeFragment(x, z) {
+  const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.7), new THREE.MeshBasicMaterial({ color: 0xffd23e }));
+  m.position.set(x, 1.4, z); scene.add(m);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.24, 22, 6, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.2, side: THREE.DoubleSide }));
+  shaft.position.set(x, 11, z); scene.add(shaft);
+  frags.push({ mesh: m, shaft, x, z, got: false });
+}
+const STAGES = [
+  'Speak with the Keeper.',
+  'Cull the plaza pack — 0/5 machines.',
+  'Recover the 3 signal fragments.',
+  'Return to the Keeper — wake the beacon.',
+  'THE WARDEN PRIME — duel in the arena of rings.',
+  'The district is sealed.'];
+let dlg = null;
+function talk(lines, done) { dlg = { lines, i: 0, done }; $('dialog').style.display = 'block';
+  $('dialog').querySelector('.who').textContent = lines[0][0]; $('dialog').querySelector('.line').textContent = lines[0][1]; }
+function advanceDialog() {
+  if (!dlg) return; dlg.i++;
+  if (dlg.i >= dlg.lines.length) { $('dialog').style.display = 'none'; const d = dlg.done; dlg = null; if (d) d(); return; }
+  $('dialog').querySelector('.who').textContent = dlg.lines[dlg.i][0]; $('dialog').querySelector('.line').textContent = dlg.lines[dlg.i][1];
+}
+function setStage(n) { S.stage = n; $('objective').textContent = STAGES[n]; sfxQuest(); }
+function nearestStatue() {
+  let best = null, bd = 6;
+  for (const st of [keeper, wardenStatue, cacheStatue]) { const d = Math.hypot(player.pos.x - st.x, player.pos.z - st.z); if (d < bd) { bd = d; best = st; } }
+  return best;
+}
+function interact() {
+  if (dlg) { advanceDialog(); return; }
+  const st = nearestStatue(); if (!st) return;
+  if (st === keeper) {
+    if (S.stage === 0) talk([['THE KEEPER', 'Runner. The district fell silent when the four factions carved it up. Their machines nest in the plaza — cull five, and the signal will breathe again.'],
+      ['THE KEEPER', 'Grow as you fight. Every level, the signal carries more of you. Then bring me three fragments, and we wake the beacon together.']], () => { setStage(1); spawnPack(18, -8, 5, true); banner('QUEST — PLAZA CULL', 'five machines hold the plaza'); });
+    else if (S.stage === 3) talk([['THE KEEPER', 'The fragments hum in your hands. The beacon wakes — and so does what guards it. The WARDEN PRIME rises in the arena of rings. End it, Runner.']], () => { setStage(4); spawnBossDuel(); });
+    else if (S.stage === 5) talk([['THE KEEPER', 'The district sings again. It was never lost, Runner — it was waiting for you.']], null);
+    else talk([['THE KEEPER', 'The signal watches you grow. Finish what the district asks.']], null);
+  } else if (st === wardenStatue) {
+    talk([['THE SEER', 'I have counted the machines\' dreams. Cull eight anywhere in the district and I will lace your lance with starlight. (Reward: 60 gold)']], () => { if (!S.sideCull) { S.sideCull = 0; banner('SIDE QUEST — STARLIT CULL', 'cull 8 machines anywhere'); sfxQuest(); } });
+  } else if (st === cacheStatue) {
+    if (!S.cache) talk([['THE CARTOGRAPHER', 'A lost cache sleeps by the south wall, where the crystals lean. Find it, and its gold is yours.']], () => { S.cacheQuest = true; banner('SIDE QUEST — THE LOST CACHE', 'search the south wall'); });
+    else talk([['THE CARTOGRAPHER', 'Every street of this district is a line of the same song. You walk it well.']], null);
+  }
+}
+function onQuestKill() {
+  if (S.stage === 1) { const left = foes.filter(f => f.quest).length;
+    $('objective').textContent = `Cull the plaza pack — ${5 - left}/5 machines.`;
+    if (left === 0) { setStage(2); placeFragment(-38, 44); placeFragment(58, -40); placeFragment(-64, -52);
+      banner('FRAGMENTS REVEALED', 'three golden shafts mark the sky'); } }
+  if (S.sideCull !== undefined && S.sideCull < 8) { S.sideCull++;
+    if (S.sideCull === 8) { S.gold += 60; banner('STARLIT CULL COMPLETE', '+60 gold — the Seer\'s blessing'); sfxQuest(); } }
+}
+function spawnBossDuel() {
+  const b = spawnFoe(0, -4, { boss: true }); b.state = 'chase';
+  $('bossbar').style.display = 'block'; sfxBoss(); banner('WARDEN PRIME', 'the arena of rings wakes');
+}
+function onBossDown() {
+  $('bossbar').style.display = 'none'; setStage(5);
+  burst(player.pos.clone().setY(2), 0xffd977, 40, 10);
+  setTimeout(() => gameOver(true), 900);
+}
+function gameOver(won) {
+  S.over = true; if (ambTimer) clearInterval(ambTimer);
+  $('end').style.display = 'flex';
+  $('end-title').textContent = won ? 'THE DISTRICT SINGS' : 'THE SIGNAL FADES';
+  $('end-sub').textContent = won ? 'ALL IN ONE — COMPLETE' : 'THE DISTRICT WAITS FOR YOUR RETURN';
+  const acc = S.swings ? Math.round(S.hits / S.swings * 100) : 0;
+  $('end-body').textContent = won
+    ? `Every system in one world, and you carried them all: level ${S.xlv}, ${S.kills} machines culled, ${S.gold} gold, ${Math.floor(S.time / 60)}:${String(Math.floor(S.time % 60)).padStart(2, '0')} in the district, strike accuracy ${acc}%. The last signal was never lost — it was waiting for you.`
+    : `Level ${S.xlv} · ${S.kills} culled · ${S.gold} gold. The statues keep your place. Run it back.`;
+  $('btn-again').textContent = won ? 'NEW GAME+ — RUN IT DEEPER' : 'RE-ENTER THE DISTRICT';
+}
+
+// ---------- input ----------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (!S.started) return;
+  if (e.code === 'Space') { e.preventDefault(); doLeap(); }
+  if (e.code === 'KeyE' || e.code === 'Enter') interact();
+  if (e.code === 'KeyF') swing();
+  if (e.code === 'KeyH') { if (S.potions > 0 && S.hp < S.maxHp) { S.potions--; S.hp = Math.min(S.maxHp, S.hp + 45); sfxPickup(); burst(player.pos.clone().setY(1.4), 0x35e0d0, 12, 5); } }
+  if (e.code === 'KeyG') { S.god = !S.god; banner(S.god ? 'GODMODE' : 'MORTAL', S.god ? 'the district cannot touch you' : ''); }
+  if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+let dragging = false, lx = 0, ly = 0, dragMoved = 0;
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { if (isTouch) return; dragging = true; dragMoved = 0; lx = e.clientX; ly = e.clientY; });
+addEventListener('pointermove', e => { if (!dragging) return;
+  dragMoved += Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly);
+  camYaw -= (e.clientX - lx) * 0.005; camPitch = clamp(camPitch + (e.clientY - ly) * 0.004, -0.1, 1.1); lx = e.clientX; ly = e.clientY; });
+addEventListener('pointerup', () => dragging = false);
+cv.addEventListener('click', () => { if (S.started && !S.over && dragMoved < 6) swing(); });
+addEventListener('wheel', e => { camDist = clamp(camDist + Math.sign(e.deltaY) * 1.2, 6, 18); });
+// touch
+const stickVec = { x: 0, y: 0 }; let stickId = null;
+if (isTouch) { for (const id of ['stick', 'btn-atk', 'btn-leap', 'btn-dash']) $(id).style.display = 'block'; }
+const stickEl = $('stick');
+stickEl.addEventListener('pointerdown', e => { stickId = e.pointerId; stickEl.setPointerCapture(e.pointerId); });
+stickEl.addEventListener('pointermove', e => { if (e.pointerId !== stickId) return;
+  const r = stickEl.getBoundingClientRect(), cx = r.left + 59, cy = r.top + 59;
+  let dx = (e.clientX - cx) / 44, dy = (e.clientY - cy) / 44; const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+  stickVec.x = dx; stickVec.y = dy; $('nub').style.transform = `translate(calc(-50% + ${dx * 32}px), calc(-50% + ${dy * 32}px))`; });
+const stickEnd = () => { stickId = null; stickVec.x = stickVec.y = 0; $('nub').style.transform = 'translate(-50%,-50%)'; };
+stickEl.addEventListener('pointerup', stickEnd); stickEl.addEventListener('pointercancel', stickEnd);
+$('btn-atk').addEventListener('click', () => swing());
+$('btn-leap').addEventListener('click', () => doLeap());
+$('btn-dash').addEventListener('click', () => tryDash());
+$('btn-talk').addEventListener('click', () => interact());
+function doLeap() {
+  if (S.over) return;
+  if (player.grounded || player.coyote > 0) { player.vy = 11.5; player.grounded = false; player.jumps = 1; tone(330, 520, 0.12, 'sine', 0.06); }
+  else if (player.jumps === 1) { player.vy = 11; player.jumps = 2; tone(392, 640, 0.14, 'sine', 0.07); burst(player.pos.clone().setY(0.4), 0xe8b84b, 10, 4); }
+}
+function tryDash() { if (player.dashCd <= 0 && !S.over) { player.dashT = 0.16; player.dashCd = 0.9; tone(220, 220 * PHI * PHI, 0.14, 'sine', 0.05); } }
+function togglePause() {
+  if (S.over) return;
+  S.paused = !S.paused; $('pause').style.display = S.paused ? 'flex' : 'none';
+}
+
+// ---------- HUD ----------
+const mm = $('minimap').getContext('2d');
+function drawHUD() {
+  $('fill-hp').style.width = (S.hp / S.maxHp * 100) + '%';
+  $('fill-xp').style.width = (S.xp / XPNEED(S.xlv) * 100) + '%';
+  $('stats').textContent = `LV ${S.xlv} · GOLD ${S.gold} · POTIONS ${S.potions} (H)${S.god ? ' · GODMODE' : ''}`;
+  let nd = 1e9; for (const f of foes) { const d = f.mesh.position.distanceTo(player.pos); if (d < nd) nd = d; }
+  const boss = foes.find(f => f.boss);
+  if (boss) $('bossfill').style.width = Math.max(0, boss.hp / boss.maxHp * 100) + '%';
+  const threat = boss ? 'PRIME' : nd < 12 ? 'HIGH' : nd < 26 ? 'GUARDED' : 'LOW';
+  const done = (S.stage >= 2 ? 1 : 0) + (S.stage >= 4 ? 1 : 0) + (S.stage >= 5 ? 1 : 0);
+  const pct = Math.round(((S.stage * 1 + S.frags) / 8 + done * 0.06) * 100);
+  const route = [0, 1, 2].map(i => i < done ? '◆' : i === done ? '◈' : '◇').join(' ');
+  const txt = `ROUTE ${route} · THREAT ${threat} · DISTRICT ${clamp(pct, 0, 100)}%`;
+  const sl = $('statusline'); if (sl.textContent !== txt) sl.textContent = txt;
+  const q = [];
+  if (S.sideCull !== undefined && S.sideCull < 8) q.push(`STARLIT CULL ${S.sideCull}/8`);
+  if (S.cacheQuest && !S.cache) q.push('THE LOST CACHE — search the south wall');
+  if (S.cache) q.push('CACHE FOUND ✓');
+  $('questlog').textContent = q.join('   ·   ');
+  // minimap
+  mm.clearRect(0, 0, 118, 118); mm.fillStyle = 'rgba(16,10,34,0.4)'; mm.fillRect(0, 0, 118, 118);
+  const sc = 118 / (WORLD_R * 2.3);
+  const dot = (x, z, color, r) => { mm.fillStyle = color; mm.beginPath(); mm.arc(59 + x * sc, 59 + z * sc, r, 0, 7); mm.fill(); };
+  dot(0, 0, '#57448f', 16);
+  for (const f of frags) if (!f.got) dot(f.x, f.z, '#ffd23e', 3);
+  dot(keeper.x, keeper.z, '#e8b84b', 3); dot(wardenStatue.x, wardenStatue.z, '#c77dff', 3); dot(cacheStatue.x, cacheStatue.z, '#35e0d0', 3);
+  for (const f of foes) dot(f.mesh.position.x, f.mesh.position.z, f.boss ? '#ff2233' : '#ff8c9a', f.boss ? 4 : 2);
+  dot(player.pos.x, player.pos.z, '#ffffff', 3);
+  $('btn-talk').style.display = (isTouch && (dlg || nearestStatue())) ? 'block' : 'none';
+}
+
+// ---------- player tick & loop ----------
+const clock = new THREE.Clock();
+function playerTick(dt) {
+  // input direction in camera space
+  let ix = 0, iz = 0;
+  if (keys.KeyW || keys.ArrowUp) iz -= 1; if (keys.KeyS || keys.ArrowDown) iz += 1;
+  if (keys.KeyA || keys.ArrowLeft) ix -= 1; if (keys.KeyD || keys.ArrowRight) ix += 1;
+  ix += stickVec.x; iz += stickVec.y;
+  const m = Math.hypot(ix, iz); if (m > 1) { ix /= m; iz /= m; }
+  const sin = Math.sin(camYaw), cos = Math.cos(camYaw);
+  const wx = ix * cos - iz * sin, wz = -ix * sin - iz * cos;
+  const speed = (keys.ShiftLeft || keys.ShiftRight) ? 13 : 8.2;
+  if (player.dashT > 0) { player.dashT -= dt; player.pos.x += Math.sin(player.face) * 34 * dt; player.pos.z += Math.cos(player.face) * 34 * dt; }
+  player.dashCd = Math.max(0, player.dashCd - dt);
+  player.pos.x += wx * speed * dt; player.pos.z += wz * speed * dt;
+  if (m > 0.12) { const target = Math.atan2(wx, wz); let d = target - player.face;
+    while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    player.face += d * Math.min(1, dt * 14); }
+  collide(player.pos, 0.9);
+  // gravity & ground
+  const wasAir = !player.grounded;
+  player.vy -= 26 * dt; player.pos.y += player.vy * dt;
+  if (player.pos.y <= 0) { player.pos.y = 0; if (wasAir && player.vy < -6) { player.landDip = 0.22; burst(player.pos.clone().setY(0.2), 0xcdbcf5, 6, 3); }
+    player.vy = 0; player.grounded = true; player.jumps = 0; }
+  else player.grounded = false;
+  player.coyote = player.grounded ? 0.12 : Math.max(0, player.coyote - dt);
+  player.hurtT = Math.max(0, player.hurtT - dt);
+  player.swingT = Math.max(0, player.swingT - dt);
+  player.landDip = Math.max(0, player.landDip - dt * 1.4);
+  // hero pose
+  hero.position.copy(player.pos); hero.position.y -= player.landDip;
+  hero.rotation.y = player.face;
+  const lance = hero.getObjectByName('lance');
+  lance.rotation.x = player.swingT > 0 ? -2.2 * Math.sin((0.32 - player.swingT) / 0.32 * Math.PI) : Math.sin(S.time * 2) * 0.06;
+  hero.getObjectByName('cape').rotation.x = 0.25 + (m > 0.12 ? 0.3 : 0) + Math.sin(S.time * 3) * 0.05;
+  heroLight.position.set(player.pos.x, player.pos.y + 4, player.pos.z);
+  // fragments & cache
+  for (const f of frags) { if (f.got) continue; f.mesh.rotation.y += dt * 2;
+    if (player.pos.distanceTo(f.mesh.position.clone().setY(player.pos.y)) < 2.4) { f.got = true; scene.remove(f.mesh); scene.remove(f.shaft);
+      S.frags++; sfxPickup(); banner(`FRAGMENT ${S.frags}/3`, 'the signal gathers');
+      if (S.frags >= 3) setStage(3); } }
+  if (S.cacheQuest && !S.cache) { if (Math.hypot(player.pos.x - 30, player.pos.z - 112) < 4) { S.cache = true; S.gold += 80;
+    banner('THE LOST CACHE', '+80 gold — the Cartographer smiles'); sfxQuest(); burst(player.pos.clone().setY(1), 0x35e0d0, 18, 6); } }
+  // camera — third person orbit
+  const cx = player.pos.x - Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+  const cz = player.pos.z - Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+  const cy = player.pos.y + 2 + Math.sin(camPitch) * camDist;
+  camera.position.set(cx, Math.max(1.4, cy), cz);
+  camera.lookAt(player.pos.x, player.pos.y + 1.7, player.pos.z);
+}
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (S.started && !S.paused && !S.over) {
+    S.time += dt;
+    playerTick(dt); foeTick(dt);
+    for (const pt of [...particles]) { pt.life -= dt * 1.4;
+      const pos = pt.points.geometry.attributes.position;
+      for (let i = 0; i < pt.vel.length; i++) { pos.array[i*3] += pt.vel[i].x * dt; pos.array[i*3+1] += pt.vel[i].y * dt; pos.array[i*3+2] += pt.vel[i].z * dt; pt.vel[i].y -= 9 * dt; }
+      pos.needsUpdate = true; pt.points.material.opacity = Math.max(0, pt.life);
+      if (pt.life <= 0) { scene.remove(pt.points); particles.splice(particles.indexOf(pt), 1); } }
+    for (const bm of [...beams]) { bm.life -= dt; bm.line.material.opacity = Math.max(0, bm.life / 0.08) * 0.95;
+      if (bm.life <= 0) { scene.remove(bm.line); beams.splice(beams.indexOf(bm), 1); } }
+    for (const st of [keeper, wardenStatue, cacheStatue]) st.orb.rotation.y += dt * 1.6;
+    drawHUD();
+  }
+  if (composer) composer.render(); else renderer.render(scene, camera);
+}
+animate();
+
+// ---------- flow ----------
+$('btn-start').addEventListener('click', () => {
+  $('start').style.display = 'none'; S.started = true; ac(); ambient();
+  // ambient roamers so the district lives before the first quest
+  spawnPack(-52, 18, 3); spawnPack(40, 52, 3); spawnPack(-16, -62, 3); spawnPack(66, -14, 2);
+  banner('VEIL — ALL IN ONE', 'the district is yours, Runner');
+});
+$('btn-resume').addEventListener('click', togglePause);
+$('btn-again').addEventListener('click', () => location.reload());
+addEventListener('pointerdown', () => { if (S.started) ac(); }, { once: true });
+</script>
+</body>
+</html>
