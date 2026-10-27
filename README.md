@@ -31,6 +31,15 @@ The world is built by φ: terraces at 90, 90/φ, 90/φ²; pillars planted at the
 
 **GODMODE**: invincible, damage × φ², fire rate up, kills pay gold × φ.
 
+## v1.1 — the DO BETTER pass
+
+- **Sound, synthesized live** — WebAudio fire/hit/explosion/pickup/wave voices and a φ-tuned ambient bed (55 Hz · 55×φ · 82.4 Hz). Zero audio files, zero downloads. M mutes.
+- **A story in nine fragments** — every signal fragment you recover speaks a line of the Last Signal lore.
+- **THE WARDEN PRIME** — Sector 3's final wave wakes a boss: 2.7× scale, 420 HP, 14-damage zaps, 144 gold.
+- **Minimap** — live radar: you, the spires' heart, pickups, and every drone in faction colors (the Prime burns red).
+- **Dash** — Q: a 3.1× burst with an FOV kick. **Medkits** — drones drop +25 HP crosses. **Damage vignette**, **pause screen**, **run stats** (time + accuracy) on victory.
+- **Sky** — 1,100 stars and a ringed watcher-moon; ACES tone mapping; the beacon fires a rotating light shaft skyward when the signal completes.
+
 ## Tech
 
 Single `index.html` + Three.js (CDN), procedural everything — no asset downloads, no build step. Seeded per-sector layouts (mulberry32), faction-colored drone AI (patrol / chase / zap), hitscan beam combat, particle bursts, PWA manifest + service worker.

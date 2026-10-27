@@ -24,6 +24,12 @@
   #objective { font-size:14px; color:#e8b84b; text-shadow:0 1px 3px #000; }
   #signal { color:#e8b84b; }
   #godtag { color:#e8b84b; font-weight:bold; display:none; }
+  #lore { font-size:13px; color:#9fe8dc; font-style:italic; margin-top:4px; text-shadow:0 1px 3px #000; min-height:16px; }
+  #vignette { position:fixed; inset:0; z-index:4; pointer-events:none; opacity:0;
+    background:radial-gradient(ellipse at center, transparent 52%, rgba(190,20,30,.55) 100%); }
+  #minimap { position:fixed; top:84px; right:12px; z-index:5; border-radius:50%;
+    border:2px solid rgba(232,184,75,.5); background:rgba(10,8,20,.55); pointer-events:none; }
+  #pause { display:none; }
   #crosshair { position:fixed; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
     border-radius:50%; background:#e8b84b; z-index:5; pointer-events:none; opacity:.9; }
   #hint { bottom:8px; left:50%; transform:translateX(-50%); font-size:12px; opacity:.75; text-align:center; width:100%; }
@@ -58,13 +64,15 @@
   <div class="bar"><div id="hpfill"></div></div>
   <div class="label" id="hptext">HP 100/100</div>
 </div>
-<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div></div>
+<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div><div id="lore"></div></div>
 <div class="hud" id="hud-right">
   <div class="label">SIGNAL <span id="signal">0%</span></div>
   <div class="label">GOLD <span id="gold">0</span></div>
   <div class="label" id="godtag">GODMODE</div>
 </div>
-<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · SPACE hop · G godmode</div>
+<div id="vignette"></div>
+<canvas id="minimap" width="148" height="148"></canvas>
+<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · Q dash · SPACE hop · G godmode · M mute</div>
 
 <div id="stick"><div id="stick-knob"></div></div>
 <button class="tbtn" id="btn-fire">FIRE</button>
@@ -78,9 +86,15 @@
      Hostile machines hold the districts for four factions who agree on one thing: you do not belong here.</p>
   <p>Recover <b style="color:#e8b84b">3 signal fragments</b> and the <b style="color:#e8b84b">golden artifact</b> in each sector,
      wake the beacon, and clear the wave. Three sectors. The counts climb the Fibonacci ladder: 3, 5, 8.</p>
-  <p style="opacity:.8">Move WASD · Look mouse / drag · Fire click / F · Sprint SHIFT · Hop SPACE · GODMODE G<br>
+  <p style="opacity:.8">Move WASD · Look mouse / drag · Fire click / F · Sprint SHIFT · Dash Q · Hop SPACE · GODMODE G<br>
      On touch screens: left stick, FIRE and HOP buttons, drag right side to look.</p>
   <button class="btn" id="btn-start">ENTER THE SIGNAL</button>
+</div>
+
+<div class="overlay" id="pause">
+  <h1>PAUSED</h1>
+  <h2>THE SIGNAL HOLDS</h2>
+  <button class="btn" id="btn-resume">RESUME</button>
 </div>
 
 <div class="overlay" id="end">
@@ -139,6 +153,23 @@ sun.position.set(40, 80, 25);
 scene.add(sun);
 const beaconLight = new THREE.PointLight(0xe8b84b, 0, 90);
 scene.add(beaconLight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+{ // starfield + a ringed watcher-moon: the sky is part of the world
+  const n = 1100, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, e = Math.random() * Math.PI * 0.48 + 0.05, r = 420;
+    pos[i*3] = Math.cos(a) * Math.cos(e) * r; pos[i*3+1] = Math.sin(e) * r; pos[i*3+2] = Math.sin(a) * Math.cos(e) * r;
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 1.5, sizeAttenuation: false, fog: false })));
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(26, 40),
+    new THREE.MeshBasicMaterial({ color: 0xd8c9a3, fog: false }));
+  moon.position.set(-190, 150, -330); moon.lookAt(0, 0, 0); scene.add(moon);
+  const halo = new THREE.Mesh(new THREE.RingGeometry(30, 44, 40),
+    new THREE.MeshBasicMaterial({ color: 0xe8b84b, transparent: true, opacity: 0.35, side: THREE.DoubleSide, fog: false }));
+  halo.position.copy(moon.position); halo.lookAt(0, 0, 0); scene.add(halo);
+}
 
 // ============================== STATE ==============================
 const S = {
@@ -155,6 +186,7 @@ let world = null;         // per-level group + colliders + pickups
 const drones = [];
 const particles = [];
 const keys = {};
+let dashT = 0, dashCd = 0;
 let fireCooldown = 0, beam = null, beamLife = 0;
 
 // ============================== WORLD BUILD ==============================
@@ -167,7 +199,7 @@ const MAT = {
 };
 let colliders = [];   // {x, z, r}
 let pickups = [];     // {mesh, kind, taken}
-let beaconMesh = null;
+let beaconMesh = null, beamShaft = null;
 
 function burst(pos, color, n = 22) {
   const geo = new THREE.BufferGeometry();
@@ -210,6 +242,15 @@ function spawnDrone(rng, lvl, aggro = false) {
   });
 }
 
+function spawnBoss(rng, lvl) {
+  spawnDrone(rng, lvl, true);
+  const b = drones[drones.length - 1];
+  b.mesh.scale.setScalar(2.7);
+  b.hp = b.maxHp = 420; b.speed = 8.8; b.boss = true; b.zapDmg = 14;
+  b.body.material = b.body.material.clone();
+  b.body.material.color.set(0xe8b84b); b.body.material.emissive.set(0xff3020);
+  return b;
+}
 function buildLevel(idx) {
   if (world) { scene.remove(world); world.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   for (const d of drones) scene.remove(d.mesh);
@@ -245,6 +286,15 @@ function buildLevel(idx) {
   beaconMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 0), MAT.gold.clone());
   beaconMesh.position.set(0, sy + 2.6, 0); world.add(beaconMesh);
   beaconLight.position.set(0, sy + 3, 0);
+  beamShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.5, 150, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xe8b84b, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+  beamShaft.position.set(0, sy + 75, 0); world.add(beamShaft);
+  for (let i = 0; i < 22; i++) {
+    const a = rng() * Math.PI * 2, r = 18 + rng() * 68;
+    const cry = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.6 + rng() * 1.8, 5),
+      new THREE.MeshStandardMaterial({ color: lvl.accent, emissive: lvl.accent, emissiveIntensity: 1.1, roughness: 0.3 }));
+    cry.position.set(Math.cos(a) * r, 0.8, Math.sin(a) * r); world.add(cry);
+  }
 
   // phyllotaxis pillars at the golden angle
   for (let i = 0; i < 34; i++) {
@@ -294,6 +344,7 @@ function buildLevel(idx) {
   for (let i = 0; i < lvl.drones; i++) spawnDrone(rng, lvl);
   player.pos.set(0, 0, 52); player.yaw = 0; player.pitch = -0.18; player.vy = 0;
   S.hp = S.maxHp; S.clues = 0; S.artifact = false; S.signal = 0; S.beaconReady = false; S.wave = false;
+  const lr = $('lore'); if (lr) lr.textContent = '';
   updateHUD();
   setObjective(`Recover 3 signal fragments + the golden artifact. Hostiles: ${lvl.drones} ${FACTIONS.map(f=>f.name).join('/')} machines.`);
 }
@@ -322,6 +373,7 @@ function showEnd(title, text, btn) {
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyG' && S.mode === 'play') { S.god = !S.god; updateHUD(); }
+  if (e.code === 'KeyM') { muted = !muted; if (masterGain) masterGain.gain.value = muted ? 0 : 0.5; }
   if ((e.code === 'KeyP' || e.code === 'Escape') && S.mode === 'play') { /* pointer lock handles pause feel */ }
 });
 addEventListener('keyup', e => keys[e.code] = false);
@@ -331,7 +383,12 @@ canvas.addEventListener('click', () => {
   if (S.mode === 'play' && !('ontouchstart' in window)) canvas.requestPointerLock();
   if (S.mode === 'play') tryFire();
 });
-document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === canvas;
+  if (!locked && S.mode === 'play' && !isTouch && S.started) $('pause').style.display = 'flex';
+  else $('pause').style.display = 'none';
+});
+$('btn-resume').addEventListener('click', () => { $('pause').style.display = 'none'; canvas.requestPointerLock(); });
 let locked = false;
 document.addEventListener('mousemove', e => {
   if (!locked || S.mode !== 'play') return;
@@ -385,11 +442,65 @@ $('btn-jump').addEventListener('touchstart', e => { hop(); e.preventDefault(); }
 $('btn-god').addEventListener('touchstart', e => { S.god = !S.god; updateHUD(); e.preventDefault(); }, { passive: false });
 function hop() { if (player.grounded && S.mode === 'play') { player.vy = 8.4; player.grounded = false; } }
 
+// ============================== AUDIO — synthesized, zero downloads ==============================
+let AC = null, masterGain = null, muted = false;
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = AC.createGain(); masterGain.gain.value = 0.5; masterGain.connect(AC.destination);
+    const g = AC.createGain(); g.gain.value = 0.045; g.connect(masterGain);
+    [55, 55 * PHI, 82.4].forEach(f => { const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(g); o.start(); });
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.07;
+    const lg = AC.createGain(); lg.gain.value = 0.02; lfo.connect(lg); lg.connect(g.gain); lfo.start();
+  } catch (e) { AC = null; }
+}
+function tone(freq, dur, type = 'sine', vol = 0.2, slide = 0) {
+  if (!AC || muted) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(masterGain); o.start(t); o.stop(t + dur);
+}
+function noiseBurst(dur = 0.3, vol = 0.3) {
+  if (!AC || muted) return;
+  const len = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, len, AC.sampleRate), ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const g = AC.createGain(); g.gain.value = vol;
+  const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900;
+  src.connect(f); f.connect(g); g.connect(masterGain); src.start();
+}
+const sfxFire = () => tone(880, 0.12, 'sawtooth', 0.10, -620);
+const sfxHit = () => tone(220, 0.07, 'square', 0.08, -80);
+const sfxBoom = () => { noiseBurst(0.35, 0.32); tone(70, 0.3, 'sine', 0.3, -40); };
+const sfxPickup = () => { tone(660, 0.12, 'sine', 0.18); setTimeout(() => tone(990, 0.18, 'sine', 0.18), 80); };
+const sfxArtifact = () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.22, 'sine', 0.16), i * 70)); };
+const sfxHurt = () => tone(140, 0.16, 'sawtooth', 0.16, -60);
+const sfxDash = () => noiseBurst(0.14, 0.10);
+const sfxWave = () => { tone(98, 0.5, 'sawtooth', 0.2, 30); tone(147, 0.5, 'sawtooth', 0.14, 20); };
+
+// ============================== LORE — the last signal, fragment by fragment ==============================
+const LORE = [
+  'FRAGMENT I — "We did not build the megastructure. We found it humming."',
+  'FRAGMENT II — "The signal is not a message. It is a metronome. Something counts with it."',
+  'FRAGMENT III — "Four crews, four flags, one silence. The machines kept all of them."',
+  'FRAGMENT IV — "The Nest was a cradle once. The brood learned the wrong lullaby."',
+  'FRAGMENT V — "Every drone dreams in the same ratio. We measured it. We stopped sleeping."',
+  'FRAGMENT VI — "Gold grows here in spirals. The vaults were gardens before they were vaults."',
+  'FRAGMENT VII — "At the Spire the signal stops counting. It starts calling names."',
+  'FRAGMENT VIII — "The Warden is not the enemy. The Warden is the lock."',
+  'FRAGMENT IX — "If you read this at the beacon: it was always your voice, returning."',
+];
+const STATS = { shots: 0, hits: 0, t0: 0 };
+
 // ============================== COMBAT ==============================
 const raycaster = new THREE.Raycaster();
 function tryFire() {
   if (fireCooldown > 0 || S.mode !== 'play') return;
   fireCooldown = S.god ? 0.11 : 0.22;
+  STATS.shots++; sfxFire();
   const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
   const origin = player.pos.clone().add(new THREE.Vector3(0, 1.7, 0));
   raycaster.set(origin, dir); raycaster.far = 70;
@@ -399,7 +510,7 @@ function tryFire() {
   let end = origin.clone().add(dir.clone().multiplyScalar(70));
   if (hits.length) {
     const d = hits[0].object.userData.drone;
-    end = hits[0].point;
+    end = hits[0].point; STATS.hits++; sfxHit();
     const dmg = S.god ? 34 * PHI * PHI : 34;
     d.hp -= dmg; d.flash = 0.12; d.state = 'chase';
     burst(hits[0].point, d.faction.color, 8);
@@ -410,12 +521,21 @@ function tryFire() {
   scene.add(beam); beamLife = 0.07;
 }
 function killDrone(d) {
-  burst(d.mesh.position, d.faction.color, 26);
+  burst(d.mesh.position, d.faction.color, d.boss ? 60 : 26);
   burst(d.mesh.position, 0xe8b84b, 10);
+  sfxBoom();
   scene.remove(d.mesh);
   drones.splice(drones.indexOf(d), 1);
-  const loot = 8 + Math.floor(Math.random() * 5) * 2;
+  const loot = d.boss ? 144 : 8 + Math.floor(Math.random() * 5) * 2;
   S.gold += S.god ? Math.round(loot * PHI) : loot;
+  if (d.boss) setObjective('THE WARDEN PRIME FALLS. The lock is open — touch the beacon.');
+  else if (Math.random() < 0.3 && S.hp < S.maxHp) {
+    const kit = new THREE.Group();
+    const m1 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.36, 0.36), new THREE.MeshStandardMaterial({ color: 0x2ee66b, emissive: 0x2ee66b, emissiveIntensity: 0.9 }));
+    const m2 = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.1, 0.36), m1.material);
+    kit.add(m1); kit.add(m2); kit.position.copy(d.mesh.position).setY(1.1); world.add(kit);
+    pickups.push({ mesh: kit, kind: 'medkit', taken: false });
+  }
   updateHUD();
   checkWaveEnd();
 }
@@ -429,8 +549,16 @@ function checkWaveEnd() {
 function collectPickup(p) {
   p.taken = true; world.remove(p.mesh);
   burst(p.mesh.position, 0xe8b84b, 20);
-  if (p.kind === 'clue') { S.clues++; S.signal += 25; setObjective(`Fragment ${S.clues}/3 secured. Signal ${S.signal}%.`); }
-  else { S.artifact = true; S.signal += 25; setObjective(`Golden artifact secured. Signal ${S.signal}%.`); }
+  if (p.kind === 'medkit') {
+    S.hp = Math.min(S.maxHp, S.hp + 25); sfxPickup();
+    setObjective('Medkit +25 HP. Keep moving.'); updateHUD(); return;
+  }
+  if (p.kind === 'clue') {
+    S.clues++; S.signal += 25; sfxPickup();
+    $('lore').textContent = LORE[S.level * 3 + S.clues - 1] || '';
+    setObjective(`Fragment ${S.clues}/3 secured. Signal ${S.signal}%.`);
+  }
+  else { S.artifact = true; S.signal += 25; sfxArtifact(); setObjective(`Golden artifact secured. Signal ${S.signal}%.`); }
   S.gold += 21;
   if (S.signal >= 100 && !S.beaconReady) {
     S.beaconReady = true;
@@ -443,7 +571,9 @@ function completeLevel() {
   const lvl = LEVELS[S.level];
   S.gold += Math.round(55 * PHI);
   if (S.level >= LEVELS.length - 1) {
-    showEnd('SIGNAL SECURED', `The megastructure answers. All three sectors sealed, ${S.gold} gold carried out of the Veil. The last signal was never lost — it was waiting for you.`, 'PLAY AGAIN');
+    const secs = Math.round((performance.now() - STATS.t0) / 1000);
+    const acc = STATS.shots ? Math.round(STATS.hits / STATS.shots * 100) : 100;
+    showEnd('SIGNAL SECURED', `The megastructure answers. All three sectors sealed, ${S.gold} gold carried out of the Veil. Run time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · accuracy ${acc}% (${STATS.hits}/${STATS.shots}). The last signal was never lost — it was waiting for you.`, 'PLAY AGAIN');
   } else {
     showEnd('SECTOR CLEARED', `${lvl.name} is sealed. ${S.gold} gold banked. The signal climbs — ${LEVELS[S.level + 1].name} wakes below.`, 'ENTER NEXT SECTOR');
   }
@@ -452,6 +582,8 @@ function completeLevel() {
 
 $('btn-start').addEventListener('click', () => {
   $('start').style.display = 'none';
+  initAudio();
+  STATS.shots = 0; STATS.hits = 0; STATS.t0 = performance.now();
   S.level = 0; S.gold = 0; S.god = false; S.started = true;
   buildLevel(0);
   S.mode = 'play';
@@ -487,10 +619,13 @@ function animate() {
       mv.addScaledVector(rgt, stickVec.x); mv.addScaledVector(fwd, -stickVec.y);
     }
     const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+    dashCd = Math.max(0, dashCd - dt); dashT = Math.max(0, dashT - dt);
+    if (keys['KeyQ'] && dashCd <= 0 && mv.lengthSq() > 0) { dashT = 0.18; dashCd = 1.6; sfxDash(); }
     if (mv.lengthSq() > 0) {
-      mv.normalize().multiplyScalar(player.speed * (sprint ? 1.62 : 1) * dt);
+      mv.normalize().multiplyScalar(player.speed * (sprint ? 1.62 : 1) * (dashT > 0 ? 3.1 : 1) * dt);
       player.pos.add(mv);
     }
+    camera.fov = dashT > 0 ? 76 : 68; camera.updateProjectionMatrix();
     if (keys['Space']) hop();
     // gravity / hop
     if (!player.grounded) {
@@ -521,13 +656,19 @@ function animate() {
     if (beaconMesh) {
       beaconMesh.rotation.y += dt * (S.beaconReady ? 2.2 : 0.5);
       beaconLight.intensity = S.beaconReady ? 60 + Math.sin(t * 5) * 18 : 6;
+      if (beamShaft) { beamShaft.material.opacity = S.beaconReady ? 0.16 + Math.sin(t * 5) * 0.05 : 0; beamShaft.rotation.y += dt * 0.7; }
       const bd = Math.hypot(player.pos.x, player.pos.z);
       if (S.beaconReady && !S.wave && bd < 15) {
-        S.wave = true;
+        S.wave = true; sfxWave();
         const rng = mulberry32(LEVELS[S.level].seed + 777);
         const n = fib(S.level + 3);
         for (let i = 0; i < n; i++) spawnDrone(rng, LEVELS[S.level], true);
-        setObjective(`FINAL WAVE — ${n} machines wake. Clear them, then touch the beacon.`);
+        if (S.level === LEVELS.length - 1) {
+          spawnBoss(rng, LEVELS[S.level]);
+          setObjective(`FINAL WAVE — ${n} machines wake, and the WARDEN PRIME with them. Clear them all, then touch the beacon.`);
+        } else {
+          setObjective(`FINAL WAVE — ${n} machines wake. Clear them, then touch the beacon.`);
+        }
       } else if (S.beaconReady && S.wave && drones.length === 0 && bd < 14.5) {
         completeLevel();
       }
@@ -557,7 +698,9 @@ function animate() {
             new THREE.LineBasicMaterial({ color: d.faction.color, transparent: true, opacity: 0.9 }));
           scene.add(zb); setTimeout(() => scene.remove(zb), 90);
           if (!S.god) {
-            S.hp -= 8; updateHUD();
+            S.hp -= (d.zapDmg || 8); sfxHurt();
+            const vg = $('vignette'); vg.style.opacity = 1; setTimeout(() => vg.style.opacity = 0, 130);
+            updateHUD();
             if (S.hp <= 0) { S.hp = 0; updateHUD(); showEnd('SIGNAL LOST', 'The machines close over the megastructure. The signal dims — but it does not die. It waits for your next run.', 'TRY AGAIN'); }
           }
         }
@@ -585,6 +728,7 @@ function animate() {
   }
   if (beam) { beamLife -= dt; if (beamLife <= 0) { scene.remove(beam); beam = null; } }
 
+  drawMinimap();
   // camera: first person at the player's eye
   camera.position.set(player.pos.x, player.pos.y + 1.7, player.pos.z);
   camera.rotation.order = 'YXZ';
@@ -593,6 +737,27 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+const mm = $('minimap').getContext('2d');
+function drawMinimap() {
+  if (!world) return;
+  const C = 74, SC = 74 / 95;
+  mm.clearRect(0, 0, 148, 148);
+  mm.fillStyle = 'rgba(232,184,75,.25)';
+  mm.beginPath(); mm.arc(C, C, 3, 0, 7); mm.fill();
+  for (const pk of pickups) {
+    if (pk.taken) continue;
+    mm.fillStyle = pk.kind === 'medkit' ? '#2ee66b' : (pk.kind === 'artifact' ? '#e8b84b' : '#1ae8c8');
+    mm.beginPath(); mm.arc(C + pk.mesh.position.x * SC, C + pk.mesh.position.z * SC, 3, 0, 7); mm.fill();
+  }
+  for (const d of drones) {
+    mm.fillStyle = d.boss ? '#ff3020' : '#' + d.faction.color.toString(16).padStart(6, '0');
+    mm.beginPath(); mm.arc(C + d.mesh.position.x * SC, C + d.mesh.position.z * SC, d.boss ? 5 : 3, 0, 7); mm.fill();
+  }
+  mm.save(); mm.translate(C + player.pos.x * SC, C + player.pos.z * SC); mm.rotate(-player.yaw);
+  mm.fillStyle = '#ffffff'; mm.beginPath(); mm.moveTo(0, -6); mm.lineTo(4, 5); mm.lineTo(-4, 5); mm.closePath(); mm.fill();
+  mm.restore();
+}
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
