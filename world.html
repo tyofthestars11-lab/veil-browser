@@ -89,6 +89,11 @@
         <div id="phi-mass" class="hud-value">1.6180</div>
     </div>
 
+    <div id="debugger-panel" style="position:absolute; top:24px; right:24px; width:300px; background:rgba(3,6,14,.72); border:1px solid rgba(0,188,255,.25); padding:12px 14px; border-radius:6px; z-index:10; color:#7991b3; font-family:monospace; font-size:10px; line-height:1.6; pointer-events:none;">
+        <div style="color:#00bcff; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">[OMNI COMPILER STREAM]</div>
+        <div id="debug-stream">INITIALIZING WEBGL CORE...</div>
+    </div>
+
     <a class="mode-link" id="link-veil" href="./index.html">&#8592; VEIL: The Last Signal</a>
     <a class="mode-link" id="link-arena" href="./arena.html">OMNI-PHI Arena</a>
 
@@ -120,6 +125,7 @@
                 rotationAngle: 0
             },
             anomalies: [],
+            npcs: [],
             gridLines: []
         };
 
@@ -216,6 +222,46 @@
             });
         }
 
+        // --- 5B. THREADED NPC COLONY — 80 systemic minds, staggered async ticks (decompiled threading model) ---
+        const npcGeo = new THREE.IcosahedronGeometry(0.8, 0);
+        const npcMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, wireframe: true });
+        for (let i = 0; i < 80; i++) {
+            const mesh = new THREE.Mesh(npcGeo, npcMat);
+            const angle = i * GOLDEN_ANGLE;
+            const radius = Math.sqrt(i) * 22 + 10;
+            mesh.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+            scene.add(mesh);
+            state.npcs.push({
+                mesh: mesh,
+                velocity: new THREE.Vector3((Math.random() - 0.5) * 4, 0, (Math.random() - 0.5) * 4),
+                wanderAngle: Math.random() * Math.PI * 2,
+                speed: 5 + Math.random() * 5,
+                tickRate: 0.05 + Math.random() * 0.05,
+                timeSinceLastTick: Math.random() * 0.1
+            });
+        }
+
+        // --- OMNI COMPILER STREAM: the decoupled assembly log, live from the world's own state ---
+        (function () {
+            const el = document.getElementById('debug-stream');
+            const lines = [];
+            let frame = 0;
+            const ops = [
+                () => '[CORE] zero-alloc GC pass · 0 bytes freed · frame ' + frame,
+                () => '[STREAM] spiral cell lookup · r = ' + (Math.sqrt(state.player.mass) * 22).toFixed(2) + ' · phi-indexed',
+                () => '[AI] colony threads ' + state.npcs.length + ' · tick budget 0.05-0.10s staggered',
+                () => '[GPU] vertex warp batch · ' + state.anomalies.length + ' anomalies · golden-angle taps 8',
+                () => '[POST] cosmic spiral blur · bloom threshold 0.74 · grade warm-gold',
+                () => '[PHYS] mass field · resonance ' + state.player.mass.toFixed(4) + ' phi',
+            ];
+            setInterval(() => {
+                frame += 47;
+                lines.push(ops[Math.floor(Math.random() * ops.length)]());
+                if (lines.length > 7) lines.shift();
+                if (el) el.innerHTML = lines.join('<br>');
+            }, 800);
+        })();
+
         // Generate the initial open world sector cluster
         for (let i = 1; i <= 45; i++) {
             spawnAnomalyNode(i);
@@ -274,6 +320,26 @@
             playerCoreMesh.rotation.y += 0.01;
             playerCoreMesh.rotation.x += 0.005;
             playerShieldMesh.rotation.z -= 0.003;
+
+            // Threaded NPC colony: think on staggered ticks, move every frame
+            for (const npc of state.npcs) {
+                npc.timeSinceLastTick += dt;
+                if (npc.timeSinceLastTick >= npc.tickRate) {
+                    npc.timeSinceLastTick = 0;
+                    npc.wanderAngle += (Math.random() - 0.5) * 0.9;
+                    const toCore = p.position.clone().sub(npc.mesh.position); toCore.y = 0;
+                    const dc = toCore.length();
+                    let dir = new THREE.Vector3(Math.cos(npc.wanderAngle), 0, Math.sin(npc.wanderAngle));
+                    if (dc > 90) dir.add(toCore.normalize().multiplyScalar(0.8)); // drift home to the singularity
+                    if (dc < 8) dir.sub(toCore.normalize().multiplyScalar(1.2)); // never crowd the core
+                    if (npc.mesh.position.length() > 280) dir.add(npc.mesh.position.clone().normalize().multiplyScalar(-1.5)); // world edge recall
+                    npc.velocity.copy(dir.normalize().multiplyScalar(npc.speed));
+                }
+                npc.mesh.position.addScaledVector(npc.velocity, dt);
+                npc.mesh.position.y = Math.sin(time * 1.7 + npc.mesh.position.x * 0.4) * 0.7;
+                npc.mesh.rotation.y += dt * 0.8;
+                npc.mesh.rotation.x += dt * 0.3;
+            }
 
             // Fluid AAA Interpolation Camera Tracker (Lagged Orbit Configuration)
             const cam = state.camera;
