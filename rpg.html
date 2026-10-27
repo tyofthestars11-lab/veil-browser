@@ -38,13 +38,13 @@
   .overlay p{max-width:640px;line-height:1.55;font-size:15px;color:#d9cff7;}
   .btn{pointer-events:auto;cursor:pointer;background:linear-gradient(180deg,#ffd977,#c9932b);color:#1a1002;border:none;border-radius:10px;padding:14px 34px;font-size:17px;letter-spacing:3px;font-family:inherit;font-weight:bold;margin-top:14px;box-shadow:0 4px 22px rgba(232,184,75,.35);}
   .btn:hover{filter:brightness(1.1);}
-  .tbtn{position:fixed;z-index:6;pointer-events:auto;width:64px;height:64px;border-radius:50%;border:1px solid #e8b84b;background:rgba(20,12,40,.66);color:#ffd977;font-family:inherit;font-size:12px;letter-spacing:1px;display:none;}
-  #btn-atk{right:22px;bottom:96px;background:rgba(10,60,58,.7);border-color:#35e0d0;color:#bffcff;}
-  #btn-leap{right:96px;bottom:30px;}
-  #btn-dash{right:22px;bottom:176px;}
-  #btn-talk{left:22px;bottom:176px;display:none;border-color:#35e0d0;color:#bffcff;}
-  #stick{position:fixed;left:22px;bottom:26px;width:118px;height:118px;border-radius:50%;border:1px solid #57448f;background:rgba(16,10,34,.5);z-index:6;display:none;pointer-events:auto;}
-  #nub{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(232,184,75,.5);transform:translate(-50%,-50%);}
+  .tbtn{position:fixed;z-index:6;pointer-events:auto;width:92px;height:92px;border-radius:50%;border:2px solid #e8b84b;background:rgba(20,12,40,.66);color:#ffd977;font-family:inherit;font-size:15px;letter-spacing:1px;display:none;}
+  #btn-atk{right:20px;bottom:148px;background:rgba(10,60,58,.7);border-color:#35e0d0;color:#bffcff;}
+  #btn-leap{right:126px;bottom:34px;}
+  #btn-dash{right:20px;bottom:256px;}
+  #btn-talk{left:20px;bottom:256px;display:none;border-color:#35e0d0;color:#bffcff;}
+  #stick{position:fixed;left:20px;bottom:24px;width:156px;height:156px;border-radius:50%;border:2px solid #57448f;background:rgba(16,10,34,.5);z-index:6;display:none;pointer-events:auto;}
+  #nub{position:absolute;left:50%;top:50%;width:64px;height:64px;border-radius:50%;background:rgba(232,184,75,.5);transform:translate(-50%,-50%);}
   #end,#pause{display:none;}
   .kick{letter-spacing:6px;font-size:12px;color:#9fd8ff;opacity:.85;}
   .chips{letter-spacing:3px;font-size:13px;color:#35e0d0;margin:8px 0 2px;}
@@ -480,9 +480,9 @@ if (isTouch) { for (const id of ['stick', 'btn-atk', 'btn-leap', 'btn-dash']) $(
 const stickEl = $('stick');
 stickEl.addEventListener('pointerdown', e => { stickId = e.pointerId; stickEl.setPointerCapture(e.pointerId); });
 stickEl.addEventListener('pointermove', e => { if (e.pointerId !== stickId) return;
-  const r = stickEl.getBoundingClientRect(), cx = r.left + 59, cy = r.top + 59;
-  let dx = (e.clientX - cx) / 44, dy = (e.clientY - cy) / 44; const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
-  stickVec.x = dx; stickVec.y = dy; $('nub').style.transform = `translate(calc(-50% + ${dx * 32}px), calc(-50% + ${dy * 32}px))`; });
+  const r = stickEl.getBoundingClientRect(), cx = r.left + 78, cy = r.top + 78;
+  let dx = (e.clientX - cx) / 58, dy = (e.clientY - cy) / 58; const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+  stickVec.x = dx; stickVec.y = dy; $('nub').style.transform = `translate(calc(-50% + ${dx * 44}px), calc(-50% + ${dy * 44}px))`; });
 const stickEnd = () => { stickId = null; stickVec.x = stickVec.y = 0; $('nub').style.transform = 'translate(-50%,-50%)'; };
 stickEl.addEventListener('pointerup', stickEnd); stickEl.addEventListener('pointercancel', stickEnd);
 $('btn-atk').addEventListener('click', () => swing());
