@@ -72,6 +72,10 @@
   <div class="label">GOLD <span id="gold">0</span></div>
   <div class="label" id="godtag">GODMODE</div>
 </div>
+<div id="bossbar" style="display:none; position:fixed; top:66px; left:50%; transform:translateX(-50%); width:min(520px,72vw); z-index:6; text-align:center;">
+  <div class="label" style="color:#ff5040; letter-spacing:3px;">WARDEN PRIME</div>
+  <div style="height:10px; border:1px solid rgba(255,80,64,.7); background:rgba(20,4,4,.5); border-radius:5px; overflow:hidden;"><div id="bossfill" style="height:100%; width:100%; background:linear-gradient(90deg,#ff3020,#e8b84b); transition:width .15s;"></div></div>
+</div>
 <div id="vignette"></div>
 <canvas id="minimap" width="148" height="148"></canvas>
 <div class="hud label" id="perf" style="bottom:26px; left:12px; font-size:11px; color:#9fe8dc; display:none;"></div>
@@ -243,6 +247,8 @@ const drones = [];
 const particles = [];
 const keys = {};
 let dashT = 0, dashCd = 0, ftCd = 0, shakeT = 0;
+let hitStopT = 0, flashT = 0;
+let echoes = [];
 let fireCooldown = 0; const beams = [];
 
 // Procedural stone texture — drawn, never downloaded. This is what "filled in" means.
@@ -354,7 +360,7 @@ function buildLevel(idx) {
   drones.length = 0;
   for (const p of particles) scene.remove(p.points);
   particles.length = 0;
-  pickups = []; colliders = [];
+  pickups = []; colliders = []; echoes = [];
   const lvl = LEVELS[idx];
   const rng = mulberry32(lvl.seed);
   world = new THREE.Group(); scene.add(world);
@@ -486,6 +492,16 @@ function buildLevel(idx) {
       pickups.push({ mesh: art, kind: 'artifact', taken: false });
     }
   });
+
+  // ECHOES: three golden discovery markers per sector, set by the golden angle — wonder between the fights
+  for (let i = 0; i < 3; i++) {
+    const a = i * 2.399963 + idx * 1.3 + 0.7, r = 46 + i * 26;
+    const em = new THREE.Mesh(new THREE.OctahedronGeometry(0.85), MAT.gold.clone());
+    em.material.emissiveIntensity = 1.5;
+    em.position.set(Math.cos(a) * r, 2.2, Math.sin(a) * r);
+    world.add(em);
+    echoes.push({ mesh: em, taken: false, line: ECHOES[idx * 3 + i] });
+  }
 
   for (let i = 0; i < lvl.drones; i++) spawnDrone(rng, lvl);
   player.pos.set(0, 0, 52); player.yaw = 0; player.pitch = -0.18; player.vy = 0; player.jumps = 0; player.grounded = true; player.jbuf = 0;
@@ -757,6 +773,18 @@ setInterval(() => {
   setMusicIntensity(n);
 }, 450);
 
+const ECHOES = [
+  'ECHO I — "Before the factions, there were gardeners. They planted machines in the stone and sang them awake."',
+  'ECHO II — "The first scavenger queen mapped the Veil by its hums. Every tier, a note. Every note, golden."',
+  'ECHO III — "They did not lose the signal. They became it — and waited for someone to listen back."',
+  'ECHO IV — "A warden is a gardener who forgot the song. Remind it, or end it — both are mercy."',
+  'ECHO V — "The spire was a lighthouse before it was a throne. Its light still points home."',
+  'ECHO VI — "Gold is just sunlight that learned to wait. The artifact waited longest."',
+  'ECHO VII — "Four flags flew here. The wind kept none of them. The ratio kept all of them."',
+  'ECHO VIII — "Somewhere under the lowest tier, the first drone still dreams in Fibonacci."',
+  'ECHO IX — "When the beacon wakes, the woods of the world will hear it too. Wonder travels."',
+];
+
 // ============================== LORE — the last signal, fragment by fragment ==============================
 const LORE = [
   'FRAGMENT I — "We did not build the megastructure. We found it humming."',
@@ -798,7 +826,7 @@ $('wpn').addEventListener('pointerdown', () => {
 function tryFire() {
   if (fireCooldown > 0 || S.mode !== 'play') return;
   const W = WEAPONS[curWpn];
-  fireCooldown = W.rof * (S.god ? 0.5 : 1);
+  fireCooldown = W.rof * (S.god ? 0.5 : 1); flashT = 0.06;
   const origin = player.pos.clone().add(new THREE.Vector3(0, 1.7, 0));
   const meshes = [];
   drones.forEach(d => { d.body.userData.drone = d; meshes.push(d.body); });
@@ -837,7 +865,7 @@ function killDrone(d) {
   drones.splice(drones.indexOf(d), 1);
   const loot = d.boss ? 144 : 8 + Math.floor(Math.random() * 5) * 2;
   S.gold += S.god ? Math.round(loot * PHI) : loot;
-  if (d.boss) setObjective('THE WARDEN PRIME FALLS. The lock is open — touch the beacon.');
+  if (d.boss) { hitStopT = 0.38; shakeT = Math.max(shakeT, 0.5); setObjective('THE WARDEN PRIME FALLS. The lock is open — touch the beacon.'); }
   else if (Math.random() < 0.3 && S.hp < S.maxHp) {
     const kit = new THREE.Group();
     const m1 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.36, 0.36), new THREE.MeshStandardMaterial({ color: 0x2ee66b, emissive: 0x2ee66b, emissiveIntensity: 0.9 }));
@@ -919,9 +947,11 @@ let perfFrames = 0, perfAcc = 0;
 const fwd = new THREE.Vector3(), rgt = new THREE.Vector3(), mv = new THREE.Vector3();
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  let dt = Math.min(clock.getDelta(), 0.05);
+  if (hitStopT > 0) { hitStopT -= dt; dt *= 0.22; } // HIT-STOP: the world holds its breath when a giant falls
   const t = clock.elapsedTime;
   sun.position.set(Math.cos(t * 0.013) * 38, 95, Math.sin(t * 0.013) * 38);
+  flashT = Math.max(0, flashT - dt); heroLight.intensity = 260 + flashT * 2600;
   heroLight.position.set(player.pos.x, player.pos.y + 7, player.pos.z);
   if (world) for (const w of wisps) { // remnant wisps run systemic behaviors on the same threaded budget
     let sp = w.sp;
@@ -1000,6 +1030,17 @@ function animate() {
       if (p.taken) continue;
       p.mesh.rotation.y += dt * 1.4; p.mesh.position.y += Math.sin(t * 2.2 + p.mesh.position.x) * dt * 0.35;
       if (player.pos.distanceTo(p.mesh.position.clone().setY(0)) < 3.0 && Math.abs(p.mesh.position.y - 2) < 3.4) collectPickup(p);
+    }
+    // ECHOES — discovery beats: approach a golden marker and the structure speaks
+    for (const e of echoes) {
+      if (e.taken) continue;
+      e.mesh.rotation.y += dt * 0.9; e.mesh.position.y = 2.2 + Math.sin(t * 1.6 + e.mesh.position.x) * 0.4;
+      if (player.pos.y < 5 && player.pos.distanceTo(e.mesh.position.clone().setY(0)) < 3.2) {
+        e.taken = true; world.remove(e.mesh);
+        S.gold += 34; sfxArtifact(); burst(e.mesh.position, 0xe8b84b, 24);
+        $('lore').textContent = e.line; setObjective('ECHO FOUND — the structure remembers. +34 gold.');
+        updateHUD();
+      }
     }
     // beacon approach: trigger final wave, then completion touch
     if (beaconMesh) {
@@ -1091,6 +1132,9 @@ function animate() {
   }
   for (const bm of [...beams]) { bm.life -= dt; bm.line.material.opacity = Math.max(0, bm.life / 0.07) * 0.95; if (bm.life <= 0) { scene.remove(bm.line); beams.splice(beams.indexOf(bm), 1); } }
 
+  { const boss = drones.find(d => d.boss), bb = $('bossbar');
+    if (boss) { bb.style.display = 'block'; $('bossfill').style.width = Math.max(0, boss.hp / boss.maxHp * 100) + '%'; }
+    else if (bb.style.display !== 'none') bb.style.display = 'none'; }
   { const dust = world ? world.getObjectByName('dust') : null;
     if (dust) { dust.rotation.y = t * 0.008; dust.position.y = Math.sin(t * 0.35) * 0.6; } }
   drawMinimap();
