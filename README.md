@@ -4,6 +4,22 @@ The entire VEIL game in the browser. No downloads, no gigabytes — one page, th
 
 **Play it:** https://tyofthestars11-lab.github.io/veil-browser/
 
+## One game, three worlds — MERGED
+
+- **VEIL: The Last Signal** (index) — the 3-sector first-person campaign.
+- **OMNI-PHI Arena** (arena.html) — 2D singularity arena: steer the Vanguard Core, absorb anomalies, grow your Φ mass. WASD + mouse + touch.
+- **OMNI WORLD 3D** (world.html) — orbital 3D singularity: a golden-spiral fractal web of 45 anomalies around a warped grid fabric, lagged cinematic orbit camera, scroll to zoom the orbit.
+
+Every mode links to every other mode. All free, all phi — no downloads, no installs, no data centers.
+
+## v1.2 — OMNI OPEN WORLD pass
+
+- **The world grew ×φ**: playable radius 95 → 146, three 38-high obelisk landmarks on the rim, remnant wisps drifting golden paths, a slow sun circuit.
+- **Drone roles**: SCOUT (standard), STRIKER (fast, light, 6-dmg), SENTINEL (1.55× tank, 2.2× HP, 12-dmg zaps).
+- **XP & levels**: kills climb a Fibonacci ladder (3, 8, 16, 29, 50 cumulative) — each level +21 max HP and +34% strike power.
+- **SIDE SIGNALS**: a bonus quest per sector — recover the lost cache (+89 gold) or cull 2 SENTINELS — +55 gold on seal.
+- **T — spire-return** fast travel (8 s cooldown). **NEW GAME+**: clear the campaign and run it again at ×φ drone hardness, gold kept.
+
 **Install it as an app:** open the link in Chrome (phone or desktop), menu → **Install app** / **Add to Home screen**. Full screen, landscape, works offline after the first load.
 
 ## The campaign — three sectors, the whole game

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OMNI-PHI: AAA Space Arena — a VEIL bonus arena</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #020208;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            pointer-events: none;
+            color: #fff;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        .hud-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: #8a99ad;
+            margin-bottom: 4px;
+        }
+        .hud-value {
+            font-size: 32px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            background: linear-gradient(45deg, #fff, #a3b8cc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #instruction-overlay {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.4);
+            font-size: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            pointer-events: none;
+            animation: pulse 2s infinite ease-in-out;
+            text-align: center;
+            width: 100%;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.8; }
+        }
+        #back-link {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            color: #e8b84b;
+            font-size: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-decoration: none;
+            border: 1px solid rgba(232,184,75,.55);
+            padding: 8px 14px;
+            border-radius: 8px;
+            background: rgba(10,8,20,.5);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="hud-title">Vanguard Core Mass (Φ)</div>
+        <div id="score" class="hud-value">1.618</div>
+    </div>
+
+    <a id="back-link" href="./index.html">&#8592; VEIL: The Last Signal</a>
+    <a id="back-link" href="./world.html" style="top:76px;">OMNI WORLD 3D</a>
+
+    <div id="instruction-overlay">Drag / Move mouse to steer core &middot; WASD overrides</div>
+
+    <canvas id="stage"></canvas>
+
+    <script>
+        const canvas = document.getElementById('stage');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+
+        // Constants & Phi Ratios
+        const PHI = 1.6180339887;
+        const GOLDEN_ANGLE = 137.5078 * (Math.PI / 180); // Tyree's read: 222.4922 complement
+
+        // Resize Handling
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        // Game State Tracking
+        const state = {
+            player: {
+                x: width / 2,
+                y: height / 2,
+                targetX: width / 2,
+                targetY: height / 2,
+                mass: PHI,
+                radius: 12,
+                speed: 0.08 // Smooth lerp coefficient
+            },
+            camera: {
+                x: width / 2,
+                y: height / 2,
+                targetX: width / 2,
+                targetY: height / 2,
+                zoom: 1,
+                targetZoom: 1,
+                shake: 0
+            },
+            particles: [],
+            anomalies: [],
+            shockwaves: []
+        };
+
+        // Input Listeners
+        const updateTarget = (e) => {
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            // Screen to world coordinates adjustment (relative to camera position)
+            state.player.targetX = clientX + (state.camera.x - width / 2);
+            state.player.targetY = clientY + (state.camera.y - height / 2);
+        };
+        window.addEventListener('mousemove', updateTarget);
+        window.addEventListener('touchmove', updateTarget, { passive: true });
+
+        // WASD / arrow hardware override
+        const keysHeld = {};
+        window.addEventListener('keydown', e => { keysHeld[e.code] = true; });
+        window.addEventListener('keyup', e => { keysHeld[e.code] = false; });
+
+        // Factory Functions
+        function createParticle(x, y, color, speedMultiplier = 1) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = (Math.random() * 4 + 2) * speedMultiplier;
+            return {
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                alpha: 1,
+                size: Math.random() * 2 + 1,
+                color: color || `hsl(${Math.random() * 40 + 200}, 100%, 75%)`,
+                decay: Math.random() * 0.015 + 0.01
+            };
+        }
+
+        function createShockwave(x, y, maxRadius) {
+            return { x, y, radius: 0, maxRadius, alpha: 1 };
+        }
+
+        let spawnTurns = 0;
+        function spawnAnomaly() {
+            // Each new anomaly steps around the core by the golden angle —
+            // the field grows as a phyllotaxis spiral, never a grid.
+            spawnTurns++;
+            const angle = spawnTurns * GOLDEN_ANGLE + Math.random() * 0.6;
+            const distance = Math.random() * 400 + 300;
+            state.anomalies.push({
+                x: state.player.x + Math.cos(angle) * distance,
+                y: state.player.y + Math.sin(angle) * distance,
+                mass: Math.pow(PHI, Math.random() * 2 + 1),
+                pulse: 0,
+                pulseSpeed: Math.random() * 0.05 + 0.02
+            });
+        }
+
+        // Initialize world objects
+        for (let i = 0; i < 5; i++) spawnAnomaly();
+
+        // Main Engine Frame Loop
+        function loop() {
+            // --- 1. PHYSICS UPDATE ---
+
+            // WASD override: held keys drive the target directly
+            const p0 = state.player;
+            const kvx = (keysHeld['KeyD'] || keysHeld['ArrowRight'] ? 1 : 0) - (keysHeld['KeyA'] || keysHeld['ArrowLeft'] ? 1 : 0);
+            const kvy = (keysHeld['KeyS'] || keysHeld['ArrowDown'] ? 1 : 0) - (keysHeld['KeyW'] || keysHeld['ArrowUp'] ? 1 : 0);
+            if (kvx || kvy) { p0.targetX += kvx * 18; p0.targetY += kvy * 18; }
+
+            // Core smooth camera & position interpolation (Inertia modeling)
+            const p = state.player;
+            p.x += (p.targetX - p.x) * p.speed;
+            p.y += (p.targetY - p.y) * p.speed;
+            p.radius = Math.sqrt(p.mass) * 8 + 4;
+
+            // Camera calculations tracking player with a trailing delay lag
+            const cam = state.camera;
+            cam.targetX = p.x;
+            cam.targetY = p.y;
+            cam.targetZoom = Math.max(0.4, 1.5 - (p.mass * 0.01));
+
+            cam.x += (cam.targetX - cam.x) * 0.05;
+            cam.y += (cam.targetY - cam.y) * 0.05;
+            cam.zoom += (cam.targetZoom - cam.zoom) * 0.02;
+
+            if (cam.shake > 0.1) cam.shake *= 0.9; // Shake decay
+
+            // Process Active Shockwaves
+            state.shockwaves.forEach((wave, i) => {
+                wave.radius += 8;
+                wave.alpha = 1 - (wave.radius / wave.maxRadius);
+                if (wave.radius >= wave.maxRadius) state.shockwaves.splice(i, 1);
+            });
+
+            // Process Anomaly Interactions
+            state.anomalies.forEach((anomaly, index) => {
+                anomaly.pulse += anomaly.pulseSpeed;
+
+                const dx = p.x - anomaly.x;
+                const dy = p.y - anomaly.y;
+                const dist = Math.hypot(dx, dy);
+                const absorptionZone = p.radius + (Math.sqrt(anomaly.mass) * 6) + 10;
+
+                // Gravitational pull math
+                if (dist < absorptionZone + 150) {
+                    const force = (p.mass * anomaly.mass) / (dist * 0.1 + 1);
+                    anomaly.x += (dx / dist) * force * 0.3;
+                    anomaly.y += (dy / dist) * force * 0.3;
+                }
+
+                // Core Impact Trigger
+                if (dist < absorptionZone) {
+                    // Explode anomaly into GPU-style particles
+                    for (let k = 0; k < 25; k++) {
+                        state.particles.push(createParticle(anomaly.x, anomaly.y, '#ffd700', 1.5));
+                    }
+
+                    // Generate structural shockwave distortion and screen shake
+                    state.shockwaves.push(createShockwave(anomaly.x, anomaly.y, anomaly.mass * 60));
+                    cam.shake = anomaly.mass * 8;
+
+                    // Absorb Mass values using Fibonacci rules
+                    p.mass += anomaly.mass / PHI;
+                    scoreEl.innerText = p.mass.toFixed(3);
+
+                    // Remove current node and instantly queue clean spatial replacement
+                    state.anomalies.splice(index, 1);
+                    setTimeout(spawnAnomaly, Math.random() * 1000 + 500);
+                }
+            });
+
+            // Process High-Density Particle Dynamics
+            state.particles.forEach((part, index) => {
+                // Apply spatial velocity dampening
+                part.x += part.vx;
+                part.y += part.vy;
+                part.vx *= 0.98;
+                part.vy *= 0.98;
+                part.alpha -= part.decay;
+
+                // Gravitational pull directly toward player core singularity
+                const dx = p.x - part.x;
+                const dy = p.y - part.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < p.radius * 6) {
+                    part.vx += (dx / dist) * 0.4;
+                    part.vy += (dy / dist) * 0.4;
+                }
+
+                if (part.alpha <= 0) state.particles.splice(index, 1);
+            });
+
+            // Maintain constant environment particles ambiance
+            if (state.particles.length < 150) {
+                const spawnAngle = Math.random() * Math.PI * 2;
+                const spawnRadius = Math.random() * 500 + 200;
+                state.particles.push(createParticle(
+                    p.x + Math.cos(spawnAngle) * spawnRadius,
+                    p.y + Math.sin(spawnAngle) * spawnRadius,
+                    `hsla(${210 + Math.random() * 30}, 100%, 70%, 0.6)`
+                ));
+            }
+
+            // --- 2. CANVAS RENDERING ENGINE ---
+            ctx.fillStyle = '#020208';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save();
+            // Implement cinematic screen shake matrix transform offsets
+            if (cam.shake > 0.5) {
+                const sx = (Math.random() - 0.5) * cam.shake;
+                const sy = (Math.random() - 0.5) * cam.shake;
+                ctx.translate(sx, sy);
+            }
+            // Move view space relative to center camera parameters
+            ctx.translate(width / 2, height / 2);
+            ctx.scale(cam.zoom, cam.zoom);
+            ctx.translate(-cam.x, -cam.y);
+
+            // Draw Non-Cartesian Web Lattice Grid
+            ctx.strokeStyle = 'rgba(40, 60, 110, 0.15)';
+            ctx.lineWidth = 1;
+            const gridSize = 120;
+            const startX = Math.floor((cam.x - width / cam.zoom) / gridSize) * gridSize;
+            const endX = Math.ceil((cam.x + width / cam.zoom) / gridSize) * gridSize;
+            const startY = Math.floor((cam.y - height / cam.zoom) / gridSize) * gridSize;
+            const endY = Math.ceil((cam.y + height / cam.zoom) / gridSize) * gridSize;
+            for (let x = startX; x <= endX; x += gridSize) {
+                ctx.beginPath();
+                for (let y = startY; y <= endY; y += 20) {
+                    // Distort grid layout mathematically around player signature coordinates
+                    let dx = x - p.x;
+                    let dy = y - p.y;
+                    let d = Math.hypot(dx, dy);
+                    let warp = Math.min(60, 3000 / (d * 0.05 + 5));
+                    let ny = y - (dy / (d + 0.1)) * warp;
+                    ctx.lineTo(x, ny);
+                }
+                ctx.stroke();
+            }
+
+            // Render Dynamic Kinetic Shockwaves
+            state.shockwaves.forEach(wave => {
+                ctx.strokeStyle = `rgba(0, 180, 255, ${wave.alpha * 0.4})`;
+                ctx.lineWidth = 4 * wave.alpha;
+                ctx.beginPath();
+                ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+
+            // Render High-Density Particles (Bloom Emulation via Composition)
+            ctx.globalCompositeOperation = 'screen';
+            state.particles.forEach(part => {
+                ctx.fillStyle = part.color;
+                ctx.globalAlpha = part.alpha;
+                ctx.beginPath();
+                ctx.arc(part.x, part.y, part.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Render Spatial Anomalies
+            state.anomalies.forEach(anomaly => {
+                const rad = Math.sqrt(anomaly.mass) * 6 + 4;
+                const pulseRad = rad + Math.sin(anomaly.pulse) * 4;
+                // Outer containment glow ring
+                ctx.strokeStyle = 'rgba(255, 60, 100, 0.4)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(anomaly.x, anomaly.y, pulseRad, 0, Math.PI * 2);
+                ctx.stroke();
+                // Core density node
+                ctx.fillStyle = '#ff3c64';
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                ctx.arc(anomaly.x, anomaly.y, rad, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Render Player Vanguard Singularity Core
+            ctx.globalAlpha = 1.0;
+            const glowGradient = ctx.createRadialGradient(p.x, p.y, p.radius * 0.2, p.x, p.y, p.radius * 2);
+            glowGradient.addColorStop(0, '#ffffff');
+            glowGradient.addColorStop(0.3, 'rgba(0, 162, 255, 1)');
+            glowGradient.addColorStop(0.6, 'rgba(0, 60, 255, 0.3)');
+            glowGradient.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = glowGradient;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+            ctx.globalCompositeOperation = 'source-over';
+            requestAnimationFrame(loop);
+        }
+
+        // Kickstart runtime engine
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>

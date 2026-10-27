@@ -63,8 +63,10 @@
   <div class="label" id="levelname">SECTOR 1</div>
   <div class="bar"><div id="hpfill"></div></div>
   <div class="label" id="hptext">HP 100/100</div>
+  <div class="bar" style="height:7px; margin-top:3px;"><div id="xpfill" style="background:#1ae8c8; width:0%; height:100%;"></div></div>
+  <div class="label" id="lvtext">LV 1 · kills 0</div>
 </div>
-<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div><div id="lore"></div></div>
+<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div><div id="lore"></div><div id="quest" style="font-size:12px; color:#e8b84b; margin-top:2px; letter-spacing:1px;"></div></div>
 <div class="hud" id="hud-right">
   <div class="label">SIGNAL <span id="signal">0%</span></div>
   <div class="label">GOLD <span id="gold">0</span></div>
@@ -72,7 +74,7 @@
 </div>
 <div id="vignette"></div>
 <canvas id="minimap" width="148" height="148"></canvas>
-<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · Q dash · SPACE hop · G godmode · M mute</div>
+<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · Q dash · T spire-return · SPACE hop · G godmode · M mute</div>
 
 <div id="stick"><div id="stick-knob"></div></div>
 <button class="tbtn" id="btn-fire">FIRE</button>
@@ -89,6 +91,10 @@
   <p style="opacity:.8">Move WASD · Look mouse / drag · Fire click / F · Sprint SHIFT · Dash Q · Hop SPACE · GODMODE G<br>
      On touch screens: left stick, FIRE and HOP buttons, drag right side to look.</p>
   <button class="btn" id="btn-start">ENTER THE SIGNAL</button>
+  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+    <a class="btn" href="arena.html" style="text-decoration:none; font-size:13px; padding:9px 18px;">OMNI-PHI ARENA</a>
+    <a class="btn" href="world.html" style="text-decoration:none; font-size:13px; padding:9px 18px;">OMNI WORLD 3D</a>
+  </div>
 </div>
 
 <div class="overlay" id="pause">
@@ -146,7 +152,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.getElementById('game').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 600);
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 1000);
 scene.add(new THREE.HemisphereLight(0x8a7bd8, 0x1a0f14, 0.85));
 const sun = new THREE.DirectionalLight(0xffd9a0, 1.1);
 sun.position.set(40, 80, 25);
@@ -176,17 +182,18 @@ const S = {
   mode: 'menu',           // menu | play | won | lost
   level: 0, hp: 100, maxHp: 100, gold: 0,
   signal: 0, clues: 0, artifact: false, beaconReady: false, wave: false,
-  god: false, started: false,
+  god: false, started: false, kills: 0, xlv: 1, quest: null,
 };
 const player = {
   pos: new THREE.Vector3(0, 0, 52), vy: 0, grounded: true,
   yaw: 0, pitch: -0.18, speed: 13,
 };
-let world = null;         // per-level group + colliders + pickups
+let world = null;
+let NGMULT = 1, wisps = [];         // per-level group + colliders + pickups
 const drones = [];
 const particles = [];
 const keys = {};
-let dashT = 0, dashCd = 0;
+let dashT = 0, dashCd = 0, ftCd = 0;
 let fireCooldown = 0, beam = null, beamLife = 0;
 
 // ============================== WORLD BUILD ==============================
@@ -232,13 +239,19 @@ function spawnDrone(rng, lvl, aggro = false) {
     new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff2233, emissiveIntensity: 1.6 }));
   eye.position.set(0, 0, -0.85);
   g.add(body); g.add(eye);
-  const ang = rng() * Math.PI * 2, rad = 22 + rng() * 52;
+  const ang = rng() * Math.PI * 2, rad = 24 + rng() * 108;
   g.position.set(Math.cos(ang) * rad, 2.6 + rng() * 2.2, Math.sin(ang) * rad);
   scene.add(g);
+  const roll = rng();
+  const role = roll < 0.22 ? 'STRIKER' : (roll > 0.78 ? 'SENTINEL' : 'SCOUT');
+  const hpMul = role === 'STRIKER' ? 0.6 : role === 'SENTINEL' ? 2.2 : 1;
+  const spMul = role === 'STRIKER' ? 1.45 : role === 'SENTINEL' ? 0.55 : 1;
+  g.scale.setScalar(role === 'STRIKER' ? 0.8 : role === 'SENTINEL' ? 1.55 : 1);
   drones.push({
-    mesh: g, body, hp: lvl.droneHp, maxHp: lvl.droneHp, faction,
+    mesh: g, body, role, hp: lvl.droneHp * NGMULT * hpMul, maxHp: lvl.droneHp * NGMULT * hpMul, faction,
     state: aggro ? 'chase' : 'patrol', wp: null, wpT: 0, zapT: 1 + rng() * 1.5,
-    speed: lvl.droneSpeed * (0.85 + rng() * 0.3), bob: rng() * Math.PI * 2, flash: 0,
+    zapDmg: role === 'SENTINEL' ? 12 : role === 'STRIKER' ? 6 : 8,
+    speed: lvl.droneSpeed * spMul * (0.85 + rng() * 0.3), bob: rng() * Math.PI * 2, flash: 0,
   });
 }
 
@@ -262,11 +275,11 @@ function buildLevel(idx) {
   const rng = mulberry32(lvl.seed);
   world = new THREE.Group(); scene.add(world);
   scene.background = new THREE.Color(lvl.sky);
-  scene.fog = new THREE.Fog(lvl.fog, 55, 210);
+  scene.fog = new THREE.Fog(lvl.fog, 60, 340);
   const accentMat = new THREE.MeshStandardMaterial({ color: lvl.accent, emissive: lvl.accent, emissiveIntensity: 0.85, roughness: 0.4 });
 
   // ground + phi terraces: 90, 90/phi, 90/phi^2
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(95, 48), MAT.stone2);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(165, 56), MAT.stone2);
   ground.rotation.x = -Math.PI / 2; world.add(ground);
   [90, 90 / PHI, 90 / (PHI * PHI)].forEach((r, i) => {
     const ring = new THREE.Mesh(new THREE.RingGeometry(r - 1.1, r, 64),
@@ -290,16 +303,16 @@ function buildLevel(idx) {
     new THREE.MeshBasicMaterial({ color: 0xe8b84b, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
   beamShaft.position.set(0, sy + 75, 0); world.add(beamShaft);
   for (let i = 0; i < 22; i++) {
-    const a = rng() * Math.PI * 2, r = 18 + rng() * 68;
+    const a = rng() * Math.PI * 2, r = 18 + rng() * 122;
     const cry = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.6 + rng() * 1.8, 5),
       new THREE.MeshStandardMaterial({ color: lvl.accent, emissive: lvl.accent, emissiveIntensity: 1.1, roughness: 0.3 }));
     cry.position.set(Math.cos(a) * r, 0.8, Math.sin(a) * r); world.add(cry);
   }
 
   // phyllotaxis pillars at the golden angle
-  for (let i = 0; i < 34; i++) {
-    const a = i * GOLDEN_ANGLE, r = 17 + Math.sqrt(i) * 11.5;
-    if (r > 88) break;
+  for (let i = 0; i < 58; i++) {
+    const a = i * GOLDEN_ANGLE, r = 17 + Math.sqrt(i) * 17;
+    if (r > 146) break;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const h = 3 + rng() * 9;
     box(2.2, h, 2.2, i % 3 ? MAT.stone : MAT.broken, x, h / 2, z, a);
@@ -307,22 +320,47 @@ function buildLevel(idx) {
     colliders.push({ x, z, r: 1.9 });
   }
   // perimeter wall segments with accent caps
-  for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI * 2 + 0.2, x = Math.cos(a) * 90, z = Math.sin(a) * 90;
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * Math.PI * 2 + 0.2, x = Math.cos(a) * 148, z = Math.sin(a) * 148;
     box(16, 6 + rng() * 5, 2.4, MAT.dark, x, 3, z, -a + Math.PI / 2);
   }
   // scattered ruins
   for (let i = 0; i < 16; i++) {
-    const a = rng() * Math.PI * 2, r = 20 + rng() * 62, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const a = rng() * Math.PI * 2, r = 24 + rng() * 112, x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (Math.hypot(x, z) < 16) continue;
     box(2 + rng() * 4, 1 + rng() * 3.4, 2 + rng() * 3, MAT.broken, x, 1, z, rng() * 3);
     colliders.push({ x, z, r: 2.4 });
   }
 
+  // OMNI landmarks: three obelisks at golden-angle stations on the rim
+  for (let i = 0; i < 3; i++) {
+    const a = i * GOLDEN_ANGLE + 0.7, x = Math.cos(a) * 122, z = Math.sin(a) * 122;
+    box(6, 38, 6, MAT.dark, x, 19, z, a);
+    box(7, 1.2, 7, accentMat, x, 38.6, z, a);
+    colliders.push({ x, z, r: 5 });
+  }
+  // remnant wisps: neutral lights drifting the golden paths
+  wisps = [];
+  for (let i = 0; i < 8; i++) {
+    const wm = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 8), new THREE.MeshBasicMaterial({ color: 0xb8ffef }));
+    world.add(wm);
+    wisps.push({ m: wm, a: rng() * 6.283, r: 30 + rng() * 95, sp: 0.04 + rng() * 0.07, y: 2 + rng() * 3.5 });
+  }
+  // SIDE SIGNAL quest for this sector
+  S.quest = idx === 1
+    ? { type: 'sentinels', need: 2, got: 0, done: false, desc: 'SIDE SIGNAL — cull 2 SENTINELS' }
+    : { type: 'cache', need: 1, got: 0, done: false, desc: 'SIDE SIGNAL — find the lost cache' };
+  if (S.quest.type === 'cache') {
+    const ca = rng() * Math.PI * 2, cr = 100 + rng() * 32;
+    const cacheMesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), MAT.gold.clone());
+    cacheMesh.position.set(Math.cos(ca) * cr, 1.6, Math.sin(ca) * cr); world.add(cacheMesh);
+    pickups.push({ mesh: cacheMesh, kind: 'cache', taken: false });
+  }
+
   // pickups: 3 signal fragments (terminals) + 1 golden artifact
   const spots = [];
   while (spots.length < 4) {
-    const a = rng() * Math.PI * 2, r = 26 + rng() * 48;
+    const a = rng() * Math.PI * 2, r = 30 + rng() * 92;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (spots.some(s => Math.hypot(s[0] - x, s[1] - z) < 18)) continue;
     spots.push([x, z]);
@@ -352,7 +390,10 @@ function buildLevel(idx) {
 // ============================== HUD ==============================
 const $ = id => document.getElementById(id);
 function updateHUD() {
-  $('levelname').textContent = LEVELS[S.level].name;
+  $('levelname').textContent = LEVELS[S.level].name + (NGMULT > 1 ? ` · NG+ x${NGMULT.toFixed(2)}` : '');
+  const lvEl = $('lvtext'); if (lvEl) lvEl.textContent = `LV ${S.xlv} · kills ${S.kills}`;
+  const xf = $('xpfill'); if (xf) { const prev = S.xlv > 1 ? XPLADDER[S.xlv - 2] : 0; const next = XPLADDER[S.xlv - 1] || prev + 21; xf.style.width = Math.min(100, (S.kills - prev) / (next - prev) * 100) + '%'; }
+  const qEl = $('quest'); if (qEl) qEl.textContent = S.quest ? (S.quest.done ? 'SIDE SIGNAL SEALED' : `${S.quest.desc} (${S.quest.got}/${S.quest.need})`) : '';
   $('hpfill').style.width = Math.max(0, S.hp / S.maxHp * 100) + '%';
   $('hptext').textContent = `HP ${Math.ceil(S.hp)}/${S.maxHp}`;
   $('signal').textContent = S.signal + '%';
@@ -374,6 +415,7 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyG' && S.mode === 'play') { S.god = !S.god; updateHUD(); }
   if (e.code === 'KeyM') { muted = !muted; if (masterGain) masterGain.gain.value = muted ? 0 : 0.5; }
+  if (e.code === 'KeyT' && S.mode === 'play' && ftCd <= 0) { player.pos.set(0, 0, 20); ftCd = 8; sfxDash(); setObjective('Returned to the Spire.'); }
   if ((e.code === 'KeyP' || e.code === 'Escape') && S.mode === 'play') { /* pointer lock handles pause feel */ }
 });
 addEventListener('keyup', e => keys[e.code] = false);
@@ -494,6 +536,7 @@ const LORE = [
   'FRAGMENT IX — "If you read this at the beacon: it was always your voice, returning."',
 ];
 const STATS = { shots: 0, hits: 0, t0: 0 };
+const XPLADDER = [3, 8, 16, 29, 50]; // cumulative kills per level: sums of 3, 5, 8, 13, 21
 
 // ============================== COMBAT ==============================
 const raycaster = new THREE.Raycaster();
@@ -511,7 +554,7 @@ function tryFire() {
   if (hits.length) {
     const d = hits[0].object.userData.drone;
     end = hits[0].point; STATS.hits++; sfxHit();
-    const dmg = S.god ? 34 * PHI * PHI : 34;
+    const dmg = (S.god ? 34 * PHI * PHI : 34) * (1 + (S.xlv - 1) * 0.34);
     d.hp -= dmg; d.flash = 0.12; d.state = 'chase';
     burst(hits[0].point, d.faction.color, 8);
     if (d.hp <= 0) killDrone(d);
@@ -524,6 +567,13 @@ function killDrone(d) {
   burst(d.mesh.position, d.faction.color, d.boss ? 60 : 26);
   burst(d.mesh.position, 0xe8b84b, 10);
   sfxBoom();
+  S.kills++;
+  if (S.quest && S.quest.type === 'sentinels' && !S.quest.done && d.role === 'SENTINEL') {
+    S.quest.got++;
+    if (S.quest.got >= S.quest.need) { S.quest.done = true; S.gold += 55; setObjective('Side signal sealed: SENTINELS culled. +55 gold.'); }
+  }
+  { const thr = XPLADDER[S.xlv - 1];
+    if (thr && S.kills >= thr) { S.xlv++; S.maxHp += 21; S.hp = S.maxHp; sfxArtifact(); burst(player.pos.clone().add(new THREE.Vector3(0, 2, 0)), 0x1ae8c8, 30); setObjective(`LEVEL ${S.xlv} — the signal strengthens you. Max HP ${S.maxHp}, strike power up.`); } }
   scene.remove(d.mesh);
   drones.splice(drones.indexOf(d), 1);
   const loot = d.boss ? 144 : 8 + Math.floor(Math.random() * 5) * 2;
@@ -549,6 +599,12 @@ function checkWaveEnd() {
 function collectPickup(p) {
   p.taken = true; world.remove(p.mesh);
   burst(p.mesh.position, 0xe8b84b, 20);
+  if (p.kind === 'cache') {
+    S.gold += 89; sfxArtifact();
+    if (S.quest && S.quest.type === 'cache' && !S.quest.done) { S.quest.done = true; S.quest.got = 1; S.gold += 55; setObjective('Lost cache recovered: +89 gold — side signal sealed: +55.'); }
+    else setObjective('Lost cache recovered: +89 gold.');
+    updateHUD(); return;
+  }
   if (p.kind === 'medkit') {
     S.hp = Math.min(S.maxHp, S.hp + 25); sfxPickup();
     setObjective('Medkit +25 HP. Keep moving.'); updateHUD(); return;
@@ -573,7 +629,7 @@ function completeLevel() {
   if (S.level >= LEVELS.length - 1) {
     const secs = Math.round((performance.now() - STATS.t0) / 1000);
     const acc = STATS.shots ? Math.round(STATS.hits / STATS.shots * 100) : 100;
-    showEnd('SIGNAL SECURED', `The megastructure answers. All three sectors sealed, ${S.gold} gold carried out of the Veil. Run time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · accuracy ${acc}% (${STATS.hits}/${STATS.shots}). The last signal was never lost — it was waiting for you.`, 'PLAY AGAIN');
+    showEnd('SIGNAL SECURED', `The megastructure answers. All three sectors sealed, ${S.gold} gold carried out of the Veil. Run time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} · accuracy ${acc}% (${STATS.hits}/${STATS.shots}). The last signal was never lost — it was waiting for you.`, 'NEW GAME+ — DEEPEN THE SIGNAL');
   } else {
     showEnd('SECTOR CLEARED', `${lvl.name} is sealed. ${S.gold} gold banked. The signal climbs — ${LEVELS[S.level + 1].name} wakes below.`, 'ENTER NEXT SECTOR');
   }
@@ -584,7 +640,7 @@ $('btn-start').addEventListener('click', () => {
   $('start').style.display = 'none';
   initAudio();
   STATS.shots = 0; STATS.hits = 0; STATS.t0 = performance.now();
-  S.level = 0; S.gold = 0; S.god = false; S.started = true;
+  S.level = 0; S.gold = 0; S.god = false; S.started = true; S.kills = 0; S.xlv = 1; S.maxHp = 100; NGMULT = 1;
   buildLevel(0);
   S.mode = 'play';
   if (!isTouch) canvas.requestPointerLock();
@@ -593,7 +649,7 @@ $('btn-again').addEventListener('click', () => {
   $('end').style.display = 'none';
   if (S.mode === 'between') { S.level++; buildLevel(S.level); }
   else if (S.mode === 'lost') { buildLevel(S.level); }
-  else { S.level = 0; S.gold = 0; buildLevel(0); }
+  else { S.level = 0; S.kills = 0; S.xlv = 1; S.maxHp = 100; NGMULT *= PHI; buildLevel(0); }
   S.mode = 'play';
   if (!isTouch) canvas.requestPointerLock();
 });
@@ -605,6 +661,8 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
+  sun.position.set(Math.cos(t * 0.013) * 70, 78, Math.sin(t * 0.013) * 70);
+  if (world) for (const w of wisps) { w.a += dt * w.sp; w.m.position.set(Math.cos(w.a) * w.r, w.y + Math.sin(t * 1.3 + w.r) * 0.8, Math.sin(w.a) * w.r); }
 
   if (S.mode === 'play') {
     // movement
@@ -619,7 +677,7 @@ function animate() {
       mv.addScaledVector(rgt, stickVec.x); mv.addScaledVector(fwd, -stickVec.y);
     }
     const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
-    dashCd = Math.max(0, dashCd - dt); dashT = Math.max(0, dashT - dt);
+    dashCd = Math.max(0, dashCd - dt); dashT = Math.max(0, dashT - dt); ftCd = Math.max(0, ftCd - dt);
     if (keys['KeyQ'] && dashCd <= 0 && mv.lengthSq() > 0) { dashT = 0.18; dashCd = 1.6; sfxDash(); }
     if (mv.lengthSq() > 0) {
       mv.normalize().multiplyScalar(player.speed * (sprint ? 1.62 : 1) * (dashT > 0 ? 3.1 : 1) * dt);
@@ -641,7 +699,7 @@ function animate() {
       }
     }
     const rr = Math.hypot(player.pos.x, player.pos.z);
-    if (rr > 87) { player.pos.x *= 87 / rr; player.pos.z *= 87 / rr; }
+    if (rr > 146) { player.pos.x *= 146 / rr; player.pos.z *= 146 / rr; }
 
     if (firing) tryFire();
     fireCooldown = Math.max(0, fireCooldown - dt);
@@ -682,7 +740,7 @@ function animate() {
       if (d.state === 'patrol') {
         d.wpT -= dt;
         if (!d.wp || d.wpT <= 0) {
-          const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 58;
+          const a = Math.random() * Math.PI * 2, r = 20 + Math.random() * 112;
           d.wp = new THREE.Vector3(Math.cos(a) * r, pos.y, Math.sin(a) * r); d.wpT = 4 + Math.random() * 4;
         }
         const toWp = d.wp.clone().sub(pos); toWp.y = 0;
@@ -741,7 +799,7 @@ animate();
 const mm = $('minimap').getContext('2d');
 function drawMinimap() {
   if (!world) return;
-  const C = 74, SC = 74 / 95;
+  const C = 74, SC = 74 / 160;
   mm.clearRect(0, 0, 148, 148);
   mm.fillStyle = 'rgba(232,184,75,.25)';
   mm.beginPath(); mm.arc(C, C, 3, 0, 7); mm.fill();

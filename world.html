@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OMNI-PHI: 3D AAA Open World RPG Engine — a VEIL world</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #010103;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        #webgl-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #hud {
+            position: absolute;
+            top: 32px;
+            left: 32px;
+            z-index: 10;
+            color: #ffffff;
+            pointer-events: none;
+        }
+        .hud-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            color: #647b99;
+            margin-bottom: 4px;
+        }
+        .hud-value {
+            font-size: 36px;
+            font-weight: 900;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #ffffff 30%, #4da6ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #controls-guide {
+            position: absolute;
+            bottom: 32px;
+            right: 32px;
+            z-index: 10;
+            color: rgba(255,255,255,0.5);
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-align: right;
+            line-height: 1.6;
+            pointer-events: none;
+            text-transform: uppercase;
+        }
+        .mode-link {
+            position: absolute;
+            z-index: 10;
+            color: #e8b84b;
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-decoration: none;
+            border: 1px solid rgba(232,184,75,.55);
+            padding: 8px 14px;
+            border-radius: 8px;
+            background: rgba(10,8,20,.5);
+        }
+        #link-veil { top: 32px; right: 32px; }
+        #link-arena { top: 76px; right: 32px; }
+    </style>
+    <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+    </script>
+</head>
+<body>
+
+    <div id="hud">
+        <div class="hud-label">Singularity Resonance (Φ)</div>
+        <div id="phi-mass" class="hud-value">1.6180</div>
+    </div>
+
+    <a class="mode-link" id="link-veil" href="./index.html">&#8592; VEIL: The Last Signal</a>
+    <a class="mode-link" id="link-arena" href="./arena.html">OMNI-PHI Arena</a>
+
+    <div id="controls-guide">
+        Move Mouse / Drag: Steer Mercenary Singularity<br>
+        Scroll Wheel: Adjust Camera Orbit Range<br>
+        Approach Anomalies to Absorb Space-Time Mass
+    </div>
+
+    <div id="webgl-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 1. PARAMETERS & MATHEMATICAL MATRIX ---
+        const PHI = 1.6180339887;
+        const GOLDEN_ANGLE = 137.5078 * (Math.PI / 180); // Tyree's read: 222.4922 complement
+
+        const state = {
+            player: {
+                position: new THREE.Vector3(0, 0, 0),
+                targetPosition: new THREE.Vector3(0, 0, 0),
+                mass: PHI,
+                speed: 0.05
+            },
+            camera: {
+                distance: 45,
+                targetDistance: 45,
+                rotationAngle: 0
+            },
+            anomalies: [],
+            gridLines: []
+        };
+
+        // --- 2. INITIALIZE 3D GRAPHICS PIPELINE (THREE.JS) ---
+        const container = document.getElementById('webgl-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x010103, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        // --- 3. BUILD THE PROCEDURAL PHI TERRAIN FABRIC ---
+        // Creates a 3D structural lattice warped according to non-Cartesian metrics
+        const gridGroup = new THREE.Group();
+        scene.add(gridGroup);
+
+        const gridGeometry = new THREE.BufferGeometry();
+        const gridVertices = [];
+        const worldRadius = 300;
+        const lineCount = 180;
+
+        for (let i = 0; i < lineCount; i++) {
+            const angle = (i / lineCount) * Math.PI * 2;
+            // Generate lines pointing out from the core like a geometric web
+            for (let r = 0; r < worldRadius; r += 5) {
+                // Introduce localized natural wave functions mimicking space-time compression
+                const waveDeform = Math.sin(r * 0.05) * Math.cos(angle * PHI) * 2;
+                gridVertices.push(Math.cos(angle) * r, waveDeform, Math.sin(angle) * r);
+                gridVertices.push(Math.cos(angle) * (r + 5), waveDeform, Math.sin(angle) * (r + 5));
+            }
+        }
+
+        gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(gridVertices, 3));
+        const gridMaterial = new THREE.LineBasicMaterial({
+            color: 0x1e385c,
+            transparent: true,
+            opacity: 0.35,
+            blending: THREE.AdditiveBlending
+        });
+        const worldGridMesh = new THREE.LineSegments(gridGeometry, gridMaterial);
+        gridGroup.add(worldGridMesh);
+
+        // --- 4. PLAYER CORE (AAA ENERGY SINGULARITY) ---
+        const coreGeo = new THREE.SphereGeometry(1, 32, 32);
+        const coreMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            wireframe: true
+        });
+        const playerCoreMesh = new THREE.Mesh(coreGeo, coreMat);
+        scene.add(playerCoreMesh);
+
+        // Outer volumetric atmospheric shield
+        const shieldGeo = new THREE.SphereGeometry(2, 16, 16);
+        const shieldMat = new THREE.MeshBasicMaterial({
+            color: 0x0088ff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.15,
+            blending: THREE.AdditiveBlending
+        });
+        const playerShieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+        scene.add(playerShieldMesh);
+
+        // --- 5. PROCEDURAL ANOMALY GENERATOR ---
+        const anomalyMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff2a55,
+            wireframe: true
+        });
+
+        function spawnAnomalyNode(index) {
+            const stepAngle = index * GOLDEN_ANGLE;
+            const stepRadius = Math.sqrt(index) * 25 + 15; // Logarithmic spiral dispersion
+
+            const size = Math.random() * 1.5 + 0.5;
+            const geo = new THREE.IcosahedronGeometry(size, 1);
+            const mesh = new THREE.Mesh(geo, anomalyMaterial);
+
+            // Set position vectors in the 3D space
+            mesh.position.set(
+                Math.cos(stepAngle) * stepRadius,
+                (Math.random() - 0.5) * 10,
+                Math.sin(stepAngle) * stepRadius
+            );
+
+            scene.add(mesh);
+            state.anomalies.push({
+                mesh: mesh,
+                initialY: mesh.position.y,
+                mass: size * PHI,
+                rotationSpeed: (Math.random() - 0.5) * 0.02
+            });
+        }
+
+        // Generate the initial open world sector cluster
+        for (let i = 1; i <= 45; i++) {
+            spawnAnomalyNode(i);
+        }
+
+        // --- 6. INPUT ENGINE SYSTEMS ---
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('pointermove', (e) => {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            // Project pointer position directly onto the 3D action plane
+            raycaster.setFromCamera(mouse, camera);
+            const intersection = new THREE.Vector3();
+            raycaster.ray.intersectPlane(plane, intersection);
+
+            state.player.targetPosition.copy(intersection);
+        });
+
+        window.addEventListener('wheel', (e) => {
+            state.camera.targetDistance = THREE.MathUtils.clamp(
+                state.camera.targetDistance + e.deltaY * 0.05, 20, 120
+            );
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- 7. RUNTIME GAME REFRESH LOOP ---
+        const clock = new THREE.Clock();
+
+        function runEngineFrame() {
+            requestAnimationFrame(runEngineFrame);
+
+            const dt = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // Interp Player Mechanics
+            const p = state.player;
+            p.position.lerp(p.targetPosition, p.speed);
+            playerCoreMesh.position.copy(p.position);
+            playerShieldMesh.position.copy(p.position);
+
+            // Dynamic Mesh Scaling based on Phi
+            const dynamicScale = Math.sqrt(p.mass) * 0.8;
+            playerCoreMesh.scale.setScalar(dynamicScale);
+            playerShieldMesh.scale.setScalar(dynamicScale * 1.8);
+
+            // Rotate core structures to simulate complex engine components
+            playerCoreMesh.rotation.y += 0.01;
+            playerCoreMesh.rotation.x += 0.005;
+            playerShieldMesh.rotation.z -= 0.003;
+
+            // Fluid AAA Interpolation Camera Tracker (Lagged Orbit Configuration)
+            const cam = state.camera;
+            cam.distance += (cam.targetDistance - cam.distance) * 0.05;
+            cam.rotationAngle += 0.002; // Gentle baseline horizon rotation
+
+            const targetCamX = p.position.x + Math.sin(cam.rotationAngle) * cam.distance;
+            const targetCamY = p.position.y + (cam.distance * 0.6); // Look down from elevated position
+            const targetCamZ = p.position.z + Math.cos(cam.rotationAngle) * cam.distance;
+
+            camera.position.lerp(new THREE.Vector3(targetCamX, targetCamY, targetCamZ), 0.06);
+            camera.lookAt(p.position);
+
+            // Process Anomaly Interactions & Gravitational Warp Physics
+            for (let i = state.anomalies.length - 1; i >= 0; i--) {
+                const anomaly = state.anomalies[i];
+                anomaly.mesh.rotation.x += anomaly.rotationSpeed;
+                anomaly.mesh.rotation.y += 0.01;
+
+                // Animate floating vertical wave position
+                anomaly.mesh.position.y = anomaly.initialY + Math.sin(time * 2 + anomaly.mesh.position.x) * 0.5;
+
+                // Distance metrics evaluation
+                const dist = p.position.distanceTo(anomaly.mesh.position);
+                const absorptionRadius = (dynamicScale * 1.8) + 1.5;
+
+                // Gravitational pull math: pull surrounding open-world objects inward
+                if (dist < absorptionRadius + 30) {
+                    const pullFactor = (p.mass / (dist + 0.1)) * 0.1;
+                    anomaly.mesh.position.lerp(p.position, pullFactor);
+                }
+
+                // Core Collision Layer Detection
+                if (dist < absorptionRadius) {
+                    // Update state mass properties via the Phi sequence modifier
+                    p.mass += anomaly.mass / PHI;
+                    document.getElementById('phi-mass').innerText = p.mass.toFixed(4);
+
+                    // De-allocate absorbed asset and clean scene pipeline arrays
+                    scene.remove(anomaly.mesh);
+                    state.anomalies.splice(i, 1);
+
+                    // Re-seed replacements dynamically deep into the horizon matrix
+                    spawnAnomalyNode(state.anomalies.length + Math.floor(Math.random() * 50));
+                }
+            }
+
+            // Render final rasterized matrix frame calculation
+            renderer.render(scene, camera);
+        }
+
+        // Boot system graphics engine loop execution
+        runEngineFrame();
+    </script>
+</body>
+</html>
