@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>VEIL: ALL IN ONE — an AAA RPG</title>
+<title>OMNI RPG — All In One</title>
 <style>
   html,body{margin:0;padding:0;background:#07040f;overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#e9e2ff;}
   #c{position:fixed;inset:0;display:block;}
@@ -74,7 +74,7 @@
 <div class="overlay" id="start">
   <div class="kick">FIELD LOG&nbsp;&nbsp;/&nbsp;&nbsp;002</div>
   <h1>VEIL</h1>
-  <h2>ALL IN ONE — AN AAA RPG</h2>
+  <h2>OMNI RPG — ALL IN ONE</h2>
   <div class="chips">ONE WORLD&nbsp;&nbsp;/&nbsp;&nbsp;EVERY SYSTEM</div>
   <p class="goldline">You are the Signal-Runner. The district is the game — all of it, in one.</p>
   <div class="violet">QUESTS · COMBAT · LEVELS · LOOT · FACTIONS · THE WARDEN</div>
@@ -84,7 +84,7 @@
      On touch: left stick, ATK, LEAP, DASH and TALK buttons.</p>
   <button class="btn" id="btn-start">ENTER THE DISTRICT</button>
 </div>
-<div class="overlay" id="pause"><h1>PAUSED</h1><h2>THE SIGNAL HOLDS</h2><button class="btn" id="btn-resume">RESUME</button></div>
+<div class="overlay" id="pause"><h1>PAUSED</h1><h2>THE SIGNAL HOLDS</h2><button class="btn" id="btn-resume">RESUME</button><button class="btn" id="btn-pause-god" style="font-size:14px; padding:10px 22px;">GODMODE — OFF</button><button class="btn" id="btn-pause-new" style="font-size:14px; padding:10px 22px;">NEW GAME</button></div>
 <div class="overlay" id="end"><h1 id="end-title">SIGNAL SEALED</h1><h2 id="end-sub"></h2><p id="end-body"></p><button class="btn" id="btn-again">PLAY AGAIN</button></div>
 
 <div id="stick"><div id="nub"></div></div>
@@ -336,6 +336,9 @@ function foeTick(dt) {
     const to = player.pos.clone().sub(foe.mesh.position); to.y = 0; const dist = to.length();
     foe.atkT -= dt; foe.mesh.children[1].position.z = -0.8;
     foe.body.rotation.y += dt * 1.4; foe.mesh.position.y = Math.abs(Math.sin(S.time * 3 + foe.bob)) * 0.14;
+    if (foe.boss) { const f = foe.hp / foe.maxHp, ph = f > 0.66 ? 1 : f > 0.33 ? 2 : 3;
+      if (ph !== foe.phase) { foe.phase = ph; foe.speed = ph === 2 ? 6.4 : 7.6; foe.dmg = ph === 2 ? 19 : 23;
+        banner(`WARDEN PRIME — PHASE ${ph}`, ph === 2 ? 'her tempo rises' : 'she is done holding back'); sfxBoss(); burst(foe.mesh.position.clone().setY(2), 0xff5566, 24, 9); } }
     if (dist < 26) foe.state = 'chase'; else if (dist > 34 && foe.state === 'chase') foe.state = 'patrol';
     if (foe.state === 'chase') {
       if (dist > (foe.boss ? 3.4 : 2.4)) foe.mesh.position.add(to.normalize().multiplyScalar(foe.speed * dt));
@@ -432,8 +435,8 @@ function onQuestKill() {
     if (S.sideCull === 8) { S.gold += 60; banner('STARLIT CULL COMPLETE', '+60 gold — the Seer\'s blessing'); sfxQuest(); } }
 }
 function spawnBossDuel() {
-  const b = spawnFoe(0, -4, { boss: true }); b.state = 'chase';
-  $('bossbar').style.display = 'block'; sfxBoss(); banner('WARDEN PRIME', 'the arena of rings wakes');
+  const b = spawnFoe(0, -4, { boss: true }); b.state = 'chase'; b.phase = 1;
+  $('bossbar').style.display = 'block'; sfxBoss(); banner('WARDEN PRIME — PHASE 1', 'the arena of rings wakes');
 }
 function onBossDown() {
   $('bossbar').style.display = 'none'; setStage(5);
@@ -588,6 +591,10 @@ function animate() {
   if (S.started && !S.paused && !S.over) {
     S.time += dt;
     playerTick(dt); foeTick(dt);
+    if (S.stage < 4) { S.spawnT = (S.spawnT || 0) - dt; // the district stays alive — machines keep arriving
+      const roam = foes.filter(f => !f.quest && !f.boss).length;
+      if (roam < 9 && S.spawnT <= 0) { S.spawnT = 6; const a = Math.random() * Math.PI * 2, r = 88 + Math.random() * 22;
+        spawnFoe(Math.cos(a) * r, Math.sin(a) * r); } }
     for (const pt of [...particles]) { pt.life -= dt * 1.4;
       const pos = pt.points.geometry.attributes.position;
       for (let i = 0; i < pt.vel.length; i++) { pos.array[i*3] += pt.vel[i].x * dt; pos.array[i*3+1] += pt.vel[i].y * dt; pos.array[i*3+2] += pt.vel[i].z * dt; pt.vel[i].y -= 9 * dt; }
@@ -610,6 +617,8 @@ $('btn-start').addEventListener('click', () => {
   banner('VEIL — ALL IN ONE', 'the district is yours, Runner');
 });
 $('btn-resume').addEventListener('click', togglePause);
+$('btn-pause-god').addEventListener('click', () => { S.god = !S.god; $('btn-pause-god').textContent = S.god ? 'GODMODE — ON' : 'GODMODE — OFF'; });
+$('btn-pause-new').addEventListener('click', () => location.reload());
 $('btn-again').addEventListener('click', () => location.reload());
 addEventListener('pointerdown', () => { if (S.started) ac(); }, { once: true });
 </script>
