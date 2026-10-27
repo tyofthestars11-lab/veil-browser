@@ -51,7 +51,7 @@
     border:2px solid rgba(232,184,75,.55); background:rgba(28,14,18,.4); color:#f0dcc8;
     font-family:inherit; font-size:12px; letter-spacing:1px; }
   #btn-fire { right:30px; bottom:104px; }
-  #btn-jump { right:108px; bottom:36px; }
+  #btn-jump { right:100px; bottom:28px; width:86px; height:86px; font-size:15px; border-color:rgba(232,184,75,.9); }
   #btn-god { right:30px; bottom:186px; color:#e8b84b; }
   body.touch .tbtn, body.touch #stick { display:block; }
 </style>
@@ -76,11 +76,11 @@
 <canvas id="minimap" width="148" height="148"></canvas>
 <div class="hud label" id="perf" style="bottom:26px; left:12px; font-size:11px; color:#9fe8dc; display:none;"></div>
 <div class="hud label" id="wpn" style="bottom:46px; left:12px; font-size:12px; color:#e8b84b; letter-spacing:1px;">PHI LANCE · keys 1/2/3</div>
-<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · Q dash · T spire-return · SPACE hop · G godmode · M mute</div>
+<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · Q dash · T spire-return · SPACE jump · mid-air again = φ-LEAP · G godmode · M mute</div>
 
 <div id="stick"><div id="stick-knob"></div></div>
 <button class="tbtn" id="btn-fire">FIRE</button>
-<button class="tbtn" id="btn-jump">HOP</button>
+<button class="tbtn" id="btn-jump">JUMP</button>
 <button class="tbtn" id="btn-god">GOD</button>
 
 <div class="overlay" id="start">
@@ -90,8 +90,8 @@
      Hostile machines hold the districts for four factions who agree on one thing: you do not belong here.</p>
   <p>Recover <b style="color:#e8b84b">3 signal fragments</b> and the <b style="color:#e8b84b">golden artifact</b> in each sector,
      wake the beacon, and clear the wave. Three sectors. The counts climb the Fibonacci ladder: 3, 5, 8.</p>
-  <p style="opacity:.8">Move WASD · Look mouse / drag · Fire click / F · Sprint SHIFT · Dash Q · Hop SPACE · GODMODE G<br>
-     On touch screens: left stick, FIRE and HOP buttons, drag right side to look.</p>
+  <p style="opacity:.8">Move WASD · Look mouse / drag · Fire click / F · Sprint SHIFT · Dash Q · Jump SPACE (again mid-air = φ-LEAP) · GODMODE G<br>
+     On touch screens: left stick, FIRE and JUMP buttons — tap JUMP twice to φ-LEAP — drag right side to look.</p>
   <button class="btn" id="btn-start">ENTER THE SIGNAL</button>
   <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
     <a class="btn" href="arena.html" style="text-decoration:none; font-size:13px; padding:9px 18px;">OMNI-PHI ARENA</a>
@@ -235,6 +235,7 @@ const S = {
 const player = {
   pos: new THREE.Vector3(0, 0, 52), vy: 0, grounded: true,
   yaw: 0, pitch: -0.18, speed: 13,
+  jumps: 0, coyote: 0, jbuf: 0, landDip: 0,
 };
 let world = null;
 let NGMULT = 1, wisps = [];         // per-level group + colliders + pickups
@@ -281,6 +282,14 @@ const MAT = {
 let colliders = [];   // {x, z, r}
 let pickups = [];     // {mesh, kind, taken}
 let beaconMesh = null, beamShaft = null;
+let skyBuilt = false;
+// SPIRE TIERS — the stacked phi tiers are ground you can stand on (AAAA traversal)
+const SPIRE_TIERS = [ { hw: 11, top: 5.2 }, { hw: 11 / PHI, top: 10.4 }, { hw: 11 / (PHI * PHI), top: 15.6 } ];
+function groundHeight(x, z) {
+  const ax = Math.abs(x), az = Math.abs(z);
+  for (let i = SPIRE_TIERS.length - 1; i >= 0; i--) { const tr = SPIRE_TIERS[i]; if (ax <= tr.hw && az <= tr.hw) return tr.top; }
+  return 0;
+}
 
 function burst(pos, color, n = 22) {
   const geo = new THREE.BufferGeometry();
@@ -294,6 +303,7 @@ function burst(pos, color, n = 22) {
   const points = new THREE.Points(geo, new THREE.PointsMaterial({ color, size: 0.35, transparent: true }));
   scene.add(points);
   particles.push({ points, v, life: 0.9 });
+  if (particles.length > 14) { const old = particles.shift(); scene.remove(old.points); old.points.geometry.dispose(); }
 }
 
 function box(w, h, d, mat, x, y, z, ry = 0) {
@@ -371,7 +381,27 @@ function buildLevel(idx) {
   box(13, 0.7, 13, accentMat, 0, 5.2, 0); box(9, 0.7, 9, accentMat, 0, 10.4, 0);
   const spireRing = new THREE.Mesh(new THREE.TorusGeometry(10.5, 0.32, 10, 48), accentMat);
   spireRing.rotation.x = Math.PI / 2; spireRing.position.y = 13.2; world.add(spireRing);
-  colliders.push({ x: 0, z: 0, r: 12.5 });
+  // SKY — starfield + the golden planet (visual fulfillment; built once, rides above every sector)
+  if (!skyBuilt) { skyBuilt = true;
+    const NS = 900, sp = new Float32Array(NS * 3);
+    for (let i = 0; i < NS; i++) { const a = Math.random() * Math.PI * 2, e = Math.random() * Math.PI * 0.48 + 0.04, r = 760;
+      sp[i*3] = Math.cos(a) * Math.cos(e) * r; sp[i*3+1] = Math.sin(e) * r; sp[i*3+2] = Math.sin(a) * Math.cos(e) * r; }
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xd8c9ff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.85, fog: false })));
+    const planet = new THREE.Mesh(new THREE.SphereGeometry(46, 32, 32), new THREE.MeshBasicMaterial({ color: 0xe8b84b, fog: false }));
+    planet.position.set(-330, 185, -520); scene.add(planet);
+    const pring = new THREE.Mesh(new THREE.TorusGeometry(74, 2.2, 8, 72), new THREE.MeshBasicMaterial({ color: 0xffe9a8, fog: false, transparent: true, opacity: 0.7 }));
+    pring.position.copy(planet.position); pring.rotation.x = Math.PI / 2.6; scene.add(pring);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(58, 24, 24), new THREE.MeshBasicMaterial({ color: 0xe8b84b, fog: false, transparent: true, opacity: 0.13 }));
+    glow.position.copy(planet.position); scene.add(glow);
+  }
+  // golden dust motes drifting over the field (rebuilt with each sector)
+  { const ND = 260, dp = new Float32Array(ND * 3);
+    for (let i = 0; i < ND; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 148;
+      dp[i*3] = Math.cos(a) * r; dp[i*3+1] = 0.4 + Math.random() * 9; dp[i*3+2] = Math.sin(a) * r; }
+    const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+    const dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0xffd977, size: 0.5, transparent: true, opacity: 0.55 }));
+    dust.name = 'dust'; world.add(dust); }
   beaconMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 0), MAT.gold.clone());
   beaconMesh.position.set(0, sy + 2.6, 0); world.add(beaconMesh);
   beaconLight.position.set(0, sy + 3, 0);
@@ -458,7 +488,7 @@ function buildLevel(idx) {
   });
 
   for (let i = 0; i < lvl.drones; i++) spawnDrone(rng, lvl);
-  player.pos.set(0, 0, 52); player.yaw = 0; player.pitch = -0.18; player.vy = 0;
+  player.pos.set(0, 0, 52); player.yaw = 0; player.pitch = -0.18; player.vy = 0; player.jumps = 0; player.grounded = true; player.jbuf = 0;
   S.hp = S.maxHp; S.clues = 0; S.artifact = false; S.signal = 0; S.beaconReady = false; S.wave = false;
   const lr = $('lore'); if (lr) lr.textContent = '';
   updateHUD();
@@ -561,7 +591,15 @@ $('btn-fire').addEventListener('touchstart', e => { firing = true; e.preventDefa
 $('btn-fire').addEventListener('touchend', () => firing = false);
 $('btn-jump').addEventListener('touchstart', e => { hop(); e.preventDefault(); }, { passive: false });
 $('btn-god').addEventListener('touchstart', e => { S.god = !S.god; updateHUD(); e.preventDefault(); }, { passive: false });
-function hop() { if (player.grounded && S.mode === 'play') { player.vy = 8.4; player.grounded = false; } }
+function hop() { if (S.mode === 'play') player.jbuf = 0.12; }
+const sfxJump = () => tone(300, 0.16, 'sine', 0.14, 260);
+const sfxLeap = () => { tone(520, 0.14, 'sine', 0.15, 340); setTimeout(() => tone(840, 0.16, 'sine', 0.12, 220), 60); };
+const sfxLand = () => { noiseBurst(0.08, 0.07); tone(90, 0.1, 'sine', 0.12, -30); };
+function doJump(v, n) {
+  player.vy = v; player.grounded = false; player.jumps = n; player.jbuf = 0; player.coyote = 0;
+  if (n === 2) { burst(player.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xe8b84b, 18); sfxLeap(); }
+  else sfxJump();
+}
 
 // ============================== AUDIO — synthesized, zero downloads ==============================
 let AC = null, masterGain = null, muted = false;
@@ -697,6 +735,12 @@ function scheduleStep(step, t, stepDur) {
   }
   const mel = MELODY[step]; // MELODY: the composed line
   if (mel) mnote(mf(mel[0]), t, stepDur * mel[1] * 0.96, MUS.lead, { type: 'sawtooth', vol: 0.16, att: 0.015, lp: 3400 });
+  if (mel && MUS.intensity >= 2) // HARMONY: at wave heat the line echoes an octave up, half a step behind
+    mnote(mf(mel[0] + 12), t + stepDur * 0.5, stepDur * mel[1] * 0.8, MUS.lead, { type: 'triangle', vol: 0.07, att: 0.02, lp: 2800 });
+  if (inChord === 0) // SUB: the root dropped an octave under the bar — the floor of the fire
+    mnote(mf(chord.root - 12), t, chordDur * 0.9, MUS.pulse, { type: 'sine', vol: 0.34, att: 0.01, lp: 300 });
+  if (MUS.intensity >= 3 && step % 4 === 0) // WAR TOMS under the WARDEN
+    mnote(150, t, 0.12, MUS.perc, { type: 'sine', vol: 0.3, att: 0.002 });
   if (inChord === 0 || inChord === 8) // PERCUSSION: taiko heart
     mnote(120, t, 0.22, MUS.perc, { type: 'sine', vol: 0.5, att: 0.002 });
   if (step % 4 === 2) mnoise(t, 0.03, MUS.perc, 0.05, true); // shaker breath
@@ -907,17 +951,42 @@ function animate() {
     }
     camera.fov = dashT > 0 ? 76 : 68; camera.updateProjectionMatrix();
     if (keys['Space']) hop();
-    // gravity / hop
+    // JUMP SYSTEM — AAAA reverse-engineered feel: coyote time, input buffer, double phi-leap, tiered ground
+    player.coyote = player.grounded ? 0.12 : Math.max(0, player.coyote - dt);
+    player.jbuf = Math.max(0, player.jbuf - dt);
+    if (player.jbuf > 0) {
+      if (player.grounded || player.coyote > 0) doJump(S.god ? 17 : 13, 1);
+      else if (player.jumps < 2) doJump(S.god ? 16 : 12.5, 2);
+    }
+    const gh = groundHeight(player.pos.x, player.pos.z);
     if (!player.grounded) {
       player.vy -= 24 * dt; player.pos.y += player.vy * dt;
-      if (player.pos.y <= 0) { player.pos.y = 0; player.grounded = true; player.vy = 0; }
-    }
+      if (player.pos.y <= gh) {
+        const hard = player.vy < -16;
+        player.pos.y = gh; player.grounded = true; player.vy = 0; player.jumps = 0;
+        player.landDip = hard ? 0.34 : 0.18; shakeT = Math.max(shakeT, hard ? 0.22 : 0.08);
+        burst(player.pos.clone(), 0xcbb27a, hard ? 16 : 9); sfxLand();
+      }
+    } else if (gh < player.pos.y - 0.01) { player.grounded = false; player.vy = 0; }
+    else player.pos.y = gh;
     // collisions + bounds
     for (const c of colliders) {
       const dx = player.pos.x - c.x, dz = player.pos.z - c.z, d = Math.hypot(dx, dz);
       if (d < c.r + 0.9 && d > 0.001) {
         player.pos.x = c.x + dx / d * (c.r + 0.9);
         player.pos.z = c.z + dz / d * (c.r + 0.9);
+      }
+    }
+    // spire tier walls: on the ground, a higher tier's face is a wall; in the air, it is a landing
+    if (player.grounded) {
+      for (const tr of SPIRE_TIERS) {
+        if (tr.top > player.pos.y + 0.55) {
+          const ax = Math.abs(player.pos.x), az = Math.abs(player.pos.z), m = tr.hw + 0.9;
+          if (ax < m && az < m) {
+            if (m - ax < m - az) player.pos.x = (player.pos.x < 0 ? -1 : 1) * m;
+            else player.pos.z = (player.pos.z < 0 ? -1 : 1) * m;
+          }
+        }
       }
     }
     const rr = Math.hypot(player.pos.x, player.pos.z);
@@ -964,6 +1033,8 @@ function animate() {
       d.thinkT -= dt;
       if (d.thinkT <= 0) {
         d.thinkT = d.boss ? 0.03 : dist < 30 ? 0.06 : dist < 75 ? 0.16 : 0.45;
+        const lod = dist > 85 ? 0 : dist > 45 ? 1 : 2; // AAAA LOD: detail dies with distance, the silhouette never does
+        if (d.lod !== lod) { d.lod = lod; if (d.mesh.children[1]) d.mesh.children[1].visible = lod > 0; }
         if (d.state === 'patrol') {
           d.wpT -= 0.25;
           if (!d.wp || d.wpT <= 0) {
@@ -1020,12 +1091,15 @@ function animate() {
   }
   for (const bm of [...beams]) { bm.life -= dt; bm.line.material.opacity = Math.max(0, bm.life / 0.07) * 0.95; if (bm.life <= 0) { scene.remove(bm.line); beams.splice(beams.indexOf(bm), 1); } }
 
+  { const dust = world ? world.getObjectByName('dust') : null;
+    if (dust) { dust.rotation.y = t * 0.008; dust.position.y = Math.sin(t * 0.35) * 0.6; } }
   drawMinimap();
   // camera: first person at the player's eye (+ impact shake, decayed)
   shakeT = Math.max(0, shakeT - dt);
   const shx = shakeT > 0 ? (Math.random() - 0.5) * shakeT * 0.5 : 0;
   const shy = shakeT > 0 ? (Math.random() - 0.5) * shakeT * 0.5 : 0;
-  camera.position.set(player.pos.x + shx, player.pos.y + 1.7 + shy, player.pos.z);
+  player.landDip = Math.max(0, (player.landDip || 0) - dt * 1.6);
+  camera.position.set(player.pos.x + shx, player.pos.y + 1.7 + shy - (player.landDip || 0), player.pos.z);
   { const pf = $('perf');
     if (pf.style.display !== 'none') {
       perfFrames++; perfAcc += dt;
