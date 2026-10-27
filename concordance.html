@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CONCORDANCE — Nine Worlds, One Rulebook</title>
+<style>
+  html,body{margin:0;padding:0;background:#05030c;overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#ece5ff;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,#150b31,#05030c);}
+  #cv{display:block;max-width:100vw;max-height:100vh;touch-action:none;}
+  #ui{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;width:min(960px,97vw);z-index:6;text-align:center;}
+  #log{min-height:20px;font-size:14px;color:#ffe9a8;text-shadow:0 1px 3px #000;letter-spacing:.4px;margin-bottom:8px;}
+  #btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .abtn{pointer-events:auto;cursor:pointer;min-width:104px;min-height:58px;padding:10px 14px;border-radius:12px;border:2px solid #57448f;background:rgba(18,10,38,.92);color:#ece5ff;font-family:inherit;font-size:15px;letter-spacing:1px;}
+  .abtn small{display:block;font-size:11px;opacity:.75;letter-spacing:0;}
+  .abtn:disabled{opacity:.32;cursor:default;}
+  .fire{border-color:#ff6a4d;color:#ffb59d;} .water{border-color:#4da6ff;color:#a8ccff;}
+  .sky{border-color:#35e0d0;color:#a5f2ea;} .earth{border-color:#e8b84b;color:#ffe9a8;}
+  .gold{border-color:#e8b84b;background:rgba(64,42,4,.92);color:#ffe9a8;}
+  .move{min-width:92px;min-height:72px;font-size:19px;}
+  #pad{display:none;gap:10px;justify-content:space-between;margin-top:8px;}
+  #pad .grp{display:flex;gap:10px;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
+<div id="ui"><div id="log"></div><div id="btns"></div>
+  <div id="pad"><div class="grp">
+    <button class="abtn move" id="p-left">◀</button><button class="abtn move" id="p-right">▶</button></div>
+    <div class="grp"><button class="abtn move" id="p-dodge">DODGE</button><button class="abtn move" id="p-parry">PARRY</button><button class="abtn move gold" id="p-atk">STRIKE</button></div>
+  </div>
+</div>
+<script>
+'use strict';
+// ================= CONCORDANCE — the vertical slice: Aetheris + the Seam + Ironreach =================
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const W = 960, H = 540;
+const $log = document.getElementById('log'), $btns = document.getElementById('btns'), $pad = document.getElementById('pad');
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+function fit() { const s = Math.min(innerWidth / W, innerHeight / H); cv.style.width = (W * s) + 'px'; cv.style.height = (H * s) + 'px'; }
+addEventListener('resize', fit); fit();
+function say(t) { $log.textContent = t; }
+function setBtns(list) { // list: {label, sub, cls, fn, disabled}
+  $btns.innerHTML = '';
+  for (const b of list) { const el = document.createElement('button'); el.className = 'abtn ' + (b.cls || '');
+    el.innerHTML = b.label + (b.sub ? `<small>${b.sub}</small>` : ''); el.disabled = !!b.disabled;
+    el.addEventListener('click', () => { ac(); b.fn(); }); $btns.appendChild(el); }
+}
+let AC = null;
+function ac() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } } if (AC && AC.state === 'suspended') AC.resume(); return AC; }
+function tone(f0, f1, dur, type = 'sine', vol = 0.1) { const c = ac(); if (!c) return;
+  const o = c.createOscillator(), g = c.createGain(); o.type = type;
+  o.frequency.setValueAtTime(f0, c.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), c.currentTime + dur);
+  g.gain.setValueAtTime(vol, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+  o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + dur); }
+const EL = { FIRE: '#ff6a4d', WATER: '#4da6ff', SKY: '#35e0d0', EARTH: '#e8b84b' };
+const ELFREQ = { FIRE: 392, WATER: 330, SKY: 494, EARTH: 262 };
+
+// ================= shared run state =================
+const G = { mode: 'title', fluency: 0, threads: { blade: true, note: false }, bleed: false, t: 0, shake: 0 };
+
+// ================= AETHERIS — turn-based JRPG grammar =================
+const A = {};
+function aetherisInit() {
+  A.party = [
+    { name: 'YOU — THE INDEX', hp: 120, max: 120, atb: 20, spd: 26, col: '#ffd977', acts: [
+      { n: 'Ash Blade', el: 'FIRE', dmg: 26 }, { n: 'Tide Cut', el: 'WATER', dmg: 22 }, { n: 'Gale Step', el: 'SKY', dmg: 20 } ] },
+    { name: 'THE CANTOR', hp: 90, max: 90, atb: 0, spd: 21, col: '#35e0d0', cantor: true, acts: [
+      { n: 'Hymn of Rain', el: 'WATER', dmg: 16 }, { n: 'Ember Verse', el: 'FIRE', dmg: 18 }, { n: 'Mend', el: 'EARTH', heal: 34, cost: 1 } ] },
+    { name: 'THE LANCER', hp: 110, max: 110, atb: 40, spd: 30, col: '#ff8c9a', acts: [
+      { n: 'Sky Pierce', el: 'SKY', dmg: 30 }, { n: 'Ember Lance', el: 'FIRE', dmg: 28 }, { n: 'Stone Thrust', el: 'EARTH', dmg: 24 } ] },
+    { name: 'THE WARDEN', hp: 140, max: 140, atb: 10, spd: 18, col: '#c77dff', acts: [
+      { n: 'Bulwark Slam', el: 'EARTH', dmg: 24 }, { n: 'Tide Guard', el: 'WATER', dmg: 18 }, { n: 'Pyre Brand', el: 'FIRE', dmg: 22 } ] } ];
+  A.choir = { hp: 900, max: 900, atb: 50, spd: 15, voices: 9, open: false };
+  A.charge = 3; A.chain = []; A.ready = null; A.over = false; A.flash = 0; A.cycleT = 0;
+  say('AETHERIS — a turn is an ATB gauge. Chain three of one colour; the Cantor cashes the chord.');
+  setBtns([]);
+}
+function aetherisAct(member, act) {
+  const choir = A.choir;
+  if (act.heal) { if (A.charge < act.cost) { say('Not enough Charge to Mend.'); return; }
+    A.charge -= act.cost; let tgt = A.party[0]; for (const m of A.party) if (m.hp > 0 && m.hp / m.max < tgt.hp / tgt.max) tgt = m;
+    tgt.hp = Math.min(tgt.max, tgt.hp + act.heal); say(`${member.name} Mends ${tgt.name} for ${act.heal}.`); tone(520, 780, 0.25, 'triangle', 0.08); }
+  else {
+    const raw = act.dmg, dealt = choir.open ? raw : Math.round(raw * 0.25);
+    choir.hp -= dealt; A.flash = 0.18;
+    tone(ELFREQ[act.el], ELFREQ[act.el] * 0.75, 0.16, 'triangle', 0.09);
+    A.chain.push(act.el); if (A.chain.length > 6) A.chain.shift();
+    say(choir.open ? `${member.name} — ${act.n} (${act.el}) strikes the Choir for ${dealt}.`
+      : `${member.name} — ${act.n} (${act.el})… the Choir barely hears it: ${dealt}. It cannot be harmed until you give it a note it does not have.`);
+    checkChord();
+  }
+  member.atb = 0; A.ready = null; setBtns([]); aetherisCheckEnd();
+}
+function checkChord() {
+  const c = A.chain; if (c.length < 3) return;
+  const last3 = c.slice(-3);
+  if (last3[0] === last3[1] && last3[1] === last3[2]) {
+    const el = last3[0], cantor = A.party[1];
+    if (cantor.hp > 0) {
+      const dmg = A.choir.open ? 150 : 60;
+      A.choir.hp -= dmg; A.chain = []; A.flash = 0.3;
+      [0, 1, 2, 3].forEach(i => setTimeout(() => tone(ELFREQ[el] * (1 + i * 0.25), ELFREQ[el] * (1 + i * 0.25), 0.3, 'sine', 0.1), i * 80));
+      if (!A.choir.open) { A.choir.open = true; A.choir.voices = 8;
+        say(`THE CANTOR CASHES THE ${el} CHORD — a note the Choir does not have! It loses a voice — and now it can be harmed. Something falls: a single NOTE, offered as a Thread.`);
+        G.threads.note = 'offered';
+      } else say(`THE CANTOR CASHES THE ${el} CHORD for ${dmg}!`);
+      aetherisCheckEnd();
+    }
+  }
+}
+function aetherisCheckEnd() {
+  if (A.over) return;
+  if (A.choir.hp <= 0) { A.over = true; setBtns([]);
+    say('The Choir yields its last voice. The seam opens east — IRONREACH waits in iron and ash.');
+    tone(262, 262, 0.5, 'sine', 0.1); setTimeout(() => seamInit(), 2200); return; }
+  if (A.party.every(m => m.hp <= 0)) { A.over = true; setBtns([]);
+    say('The party falls silent. The hymn closes over you.'); setTimeout(() => aetherisInit(), 2400); }
+}
+function aetherisTick(dt) {
+  A.cycleT += dt; A.flash = Math.max(0, A.flash - dt);
+  if (A.over) return;
+  for (const m of A.party) if (m.hp > 0 && m !== A.ready) m.atb = Math.min(100, m.atb + m.spd * dt);
+  A.choir.atb = Math.min(100, A.choir.atb + A.choir.spd * dt);
+  if (!A.ready) { const r = A.party.find(m => m.hp > 0 && m.atb >= 100);
+    if (r) { A.ready = r;
+      setBtns(r.acts.map(a => ({ label: a.n, sub: a.heal ? `${a.el} · heal · ${a.cost} Charge` : `${a.el} · ${a.dmg}`, cls: a.el.toLowerCase(),
+        fn: () => aetherisAct(r, a) })).concat([{ label: 'Charge: ' + A.charge, sub: 'party resource', cls: '', fn: () => {} }]));
+      say(`${r.name} is ready — choose the colour of the phrase.`); } }
+  if (A.choir.atb >= 100 && !A.over) { A.choir.atb = 0;
+    const alive = A.party.filter(m => m.hp > 0); if (!alive.length) return;
+    const tgt = alive[Math.floor(Math.random() * alive.length)];
+    const dmg = A.choir.open ? 16 : 11; tgt.hp -= dmg; G.shake = 0.12;
+    tone(196, 98, 0.3, 'sawtooth', 0.07);
+    say(`The Choir answers in nine voices — ${tgt.name} takes ${dmg}.`);
+    if (tgt.hp <= 0) { tgt.hp = 0; if (A.ready === tgt) { A.ready = null; setBtns([]); } }
+    aetherisCheckEnd(); }
+}
+function drawAetheris() {
+  const gr = ctx.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#2a1660'); gr.addColorStop(0.6, '#4a2a7a'); gr.addColorStop(1, '#1a0f38');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,240,190,0.85)';
+  for (let i = 0; i < 70; i++) { const x = (i * 197) % W, y = (i * 89) % 200; ctx.fillRect(x, y, 2, 2); }
+  // floating terraces
+  ctx.fillStyle = '#6a4aa0';
+  for (let i = 0; i < 5; i++) { const x = 80 + i * 190, y = 400 + Math.sin(G.t * 0.7 + i) * 5;
+    ctx.beginPath(); ctx.ellipse(x, y, 85, 13, 0, 0, 7); ctx.fill(); }
+  // THE CHOIR — nine orbiting notes
+  const cx = 700, cy = 190;
+  ctx.save(); if (A.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 30; }
+  for (let i = 0; i < A.choir.voices; i++) { const a = G.t * 0.5 + i * (Math.PI * 2 / 9);
+    const x = cx + Math.cos(a) * 78, y = cy + Math.sin(a) * 52;
+    ctx.fillStyle = ['#ff6a4d', '#4da6ff', '#35e0d0', '#e8b84b'][i % 4];
+    ctx.beginPath(); ctx.arc(x, y, 13, 0, 7); ctx.fill();
+    ctx.fillRect(x + 10, y - 26, 3, 26); }
+  ctx.restore();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 17px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('THE CHOIR' + (A.choir.open ? ' — A VOICE LOST' : ' — UNHARMED BY KNOWN NOTES'), cx, 84);
+  bar(cx - 130, 96, 260, 13, A.choir.hp / A.choir.max, '#ff5566');
+  // party
+  A.party.forEach((m, i) => { const x = 130 + i * 12, y = 350 - i * 56;
+    const px = 120, py = 140 + i * 88;
+    ctx.globalAlpha = m.hp > 0 ? 1 : 0.25;
+    ctx.fillStyle = m.col; ctx.beginPath(); ctx.moveTo(px, py + 52); ctx.lineTo(px + 26, py - 20); ctx.lineTo(px + 52, py + 52); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f2e6c8'; ctx.beginPath(); ctx.arc(px + 26, py - 28, 11, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.font = '12px Georgia'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+    ctx.fillText(m.name, px + 66, py + 2);
+    bar(px + 66, py + 8, 130, 9, m.hp / m.max, '#7be495');
+    bar(px + 66, py + 20, 130, 6, m.atb / 100, A.ready === m ? '#ffd977' : '#35e0d0');
+    if (A.ready === m) { ctx.fillStyle = '#ffd977'; ctx.font = 'bold 12px Georgia'; ctx.fillText('READY — CHOOSE', px + 66, py - 8); }
+  });
+  // resonance chain
+  ctx.font = '13px Georgia'; ctx.textAlign = 'left'; ctx.fillStyle = '#cdbcf5';
+  ctx.fillText('RESONANCE', 24, 512);
+  A.chain.forEach((el, i) => { ctx.fillStyle = EL[el]; ctx.beginPath(); ctx.arc(120 + i * 24, 507, 8, 0, 7); ctx.fill(); });
+  if (A.chain.length >= 2 && A.chain[A.chain.length - 1] === A.chain[A.chain.length - 2])
+    { ctx.fillStyle = '#ffd977'; ctx.fillText('one more of this colour — the Cantor cashes the chord', 300, 512); }
+}
+function bar(x, y, w, h, f, col) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = col; ctx.fillRect(x, y, w * clamp(f, 0, 1), h); }
+// ================= THE SEAM =================
+function seamInit() {
+  G.mode = 'seam'; $pad.style.display = 'none';
+  const offered = G.threads.note === 'offered';
+  say(offered ? 'THE SEAM — you may carry the Ash Blade and, if you take it, the Choir\'s Note. Two Threads cause a Bleed.'
+    : 'THE SEAM — the Choir fell without yielding its Note. You carry the Ash Blade alone.');
+  const list = [];
+  if (offered) list.push({ label: 'CARRY THE NOTE', sub: '2 Threads · BLEED: Hollowdeep\'s light clock follows you', cls: 'gold',
+    fn: () => { G.threads.note = true; G.bleed = true; ironreachInit('You carry two Threads. The light clock is already ticking somewhere in the iron dark.'); } });
+  list.push({ label: offered ? 'CROSS CLEAN' : 'CROSS — IRONREACH', sub: offered ? 'leave the Note · 1 Thread · no Bleed' : 'the Blade alone · no Bleed', cls: offered ? '' : 'gold',
+    fn: () => { G.threads.note = false; G.bleed = false; ironreachInit('You cross with the Blade alone. Ironreach will be exactly what it is.'); } });
+  setBtns(list);
+}
+function drawSeam() {
+  const g1 = ctx.createLinearGradient(0, 0, W / 2, 0); g1.addColorStop(0, '#4a2a7a'); g1.addColorStop(1, '#120a28');
+  ctx.fillStyle = g1; ctx.fillRect(0, 0, W / 2, H);
+  const g2 = ctx.createLinearGradient(W / 2, 0, W, 0); g2.addColorStop(0, '#120a28'); g2.addColorStop(1, '#3a2320');
+  ctx.fillStyle = g2; ctx.fillRect(W / 2, 0, W / 2, H);
+  ctx.strokeStyle = '#ffd977'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+  ctx.beginPath(); ctx.moveTo(W / 2, 20); ctx.lineTo(W / 2, H - 20); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = '#ffd977'; ctx.font = 'bold 34px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('THE SEAM', W / 2, 120);
+  ctx.fillStyle = '#ece5ff'; ctx.font = '17px Georgia';
+  ctx.fillText('AETHERIS', 150, 90); ctx.fillText('IRONREACH', W - 150, 90);
+  ctx.font = '15px Georgia'; ctx.fillStyle = '#cdbcf5';
+  ctx.fillText('The Ash Blade becomes a heavy sword with a fire tell.', W / 2, 200);
+  ctx.fillText('The Choir\'s Note becomes a weight in your chest —', W / 2, 300);
+  ctx.fillText('and Hollowdeep\'s light clock bleeds in behind it.', W / 2, 326);
+  ctx.fillStyle = '#ffd977'; ctx.font = 'italic 16px Georgia';
+  ctx.fillText('What do I need on the other side? Which foreign rule can I survive?', W / 2, 420);
+  // the threads, drawn as braided amber lines
+  ctx.strokeStyle = '#e8a33c'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(180, 470); ctx.bezierCurveTo(360, 440, 600, 500, 780, 470); ctx.stroke();
+  if (G.threads.note === 'offered') { ctx.strokeStyle = '#35e0d0'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(180, 486); ctx.bezierCurveTo(360, 456, 600, 516, 780, 486); ctx.stroke(); }
+}
+
+// ================= IRONREACH — action / soulslike grammar =================
+const I = {};
+function ironreachInit(intro) {
+  G.mode = 'ironreach'; $pad.style.display = 'flex';
+  I.p = { x: 170, hp: 100, breath: 100, face: 1, atkT: 0, dodgeT: 0, parryT: 0, parryCd: 0, hurtT: 0 };
+  I.w = { x: 660, hp: 340, max: 340, posture: 0, state: 'approach', t: 0, brokenT: 0, flash: 0 };
+  I.oil = 90; I.noteSpent = false; I.over = false; I.fireT = 0;
+  say('IRONREACH — ' + intro + ' A turn is a tempo: watch the tell, parry the beat, break the ring. The campfire (left) repairs your Hold.');
+  setBtns([]);
+}
+function ironButtons() {
+  const want = (I.p.x < 130 && G.bleed && !I.noteSpent) ? 'spend' : '';
+  if (I._btnState === want) return; I._btnState = want;
+  if (want === 'spend') setBtns([{ label: 'SPEND THE NOTE', sub: 'campfire · clear the Bleed', cls: 'gold',
+    fn: () => { I.noteSpent = true; G.bleed = false; I._btnState = 'x'; say('You feed the Note to the campfire. The light clock stops. The dark steps back.'); tone(330, 660, 0.5, 'sine', 0.09); setBtns([]); } }]);
+  else setBtns([]);
+}
+const keys = {}, pad = { l: false, r: false };
+addEventListener('keydown', e => { keys[e.code] = true;
+  if (G.mode === 'ironreach') { if (e.code === 'KeyJ' || e.code === 'KeyF') ironStrike();
+    if (e.code === 'KeyL' || e.code === 'KeyK') ironParry(); if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyM') ironDodge(); } });
+addEventListener('keyup', e => keys[e.code] = false);
+function bindHold(id, on, off) { const el = $(id);
+  el.addEventListener('pointerdown', e => { e.preventDefault(); on(); }); el.addEventListener('pointerup', off); el.addEventListener('pointerleave', off); }
+function $(id) { return document.getElementById(id); }
+bindHold('p-left', () => pad.l = true, () => pad.l = false);
+bindHold('p-right', () => pad.r = true, () => pad.r = false);
+$('p-atk').addEventListener('click', () => ironStrike());
+$('p-parry').addEventListener('click', () => ironParry());
+$('p-dodge').addEventListener('click', () => ironDodge());
+function ironStrike() { const p = I.p, w = I.w; if (!p || I.over || p.atkT > 0 || p.breath < 18) return;
+  p.breath -= 18; p.atkT = 0.38; tone(220, 110, 0.14, 'sawtooth', 0.07);
+  const dx = w.x - p.x;
+  if (Math.abs(dx) < 84 && Math.sign(dx) === p.face) { const broken = w.state === 'broken';
+    w.hp -= broken ? 26 : 9; w.posture += broken ? 0 : (w.state === 'recover' ? 17 : 7); w.flash = 0.15;
+    tone(160, 70, 0.12, 'square', 0.09);
+    say(broken ? 'The ring is broken — the Blade bites deep.' : (w.state === 'recover' ? 'Struck on his recovery — his posture ring fills fast.' : 'The Blade lands. His ring barely stirs — strike his recovery, or parry his tell.'));
+    ironCheckEnd(); } }
+function ironParry() { const p = I.p; if (!p || I.over || p.parryCd > 0 || p.breath < 8) return;
+  p.breath -= 8; p.parryT = 0.24; p.parryCd = 0.55; tone(660, 880, 0.1, 'sine', 0.06); }
+function ironDodge() { const p = I.p; if (!p || I.over || p.dodgeT > 0 || p.breath < 22) return;
+  p.breath -= 22; p.dodgeT = 0.3; tone(300, 500, 0.12, 'sine', 0.05); }
+function ironCheckEnd() {
+  if (I.over) return;
+  if (I.w.hp <= 0) { I.over = true; $pad.style.display = 'none'; setBtns([]);
+    G.fluency = 2; say('The Warden of Iron yields on the third tempo — which was a lie. He does not fall. He kneels, and points at the door he has guarded for four hundred years.');
+    tone(196, 392, 0.7, 'sine', 0.1); setTimeout(() => endInit(), 2600); }
+  else if (I.p.hp <= 0) { I.over = true; say('Your Hold breaks. The fortress keeps your place by the fire.');
+    setTimeout(() => ironreachInit('The campfire returns you. The Warden waits — his tempos do not change. Yours can.'), 2200); }
+}
+function ironTick(dt) {
+  const p = I.p, w = I.w; if (I.over) return;
+  I.fireT += dt;
+  p.atkT = Math.max(0, p.atkT - dt); p.parryT = Math.max(0, p.parryT - dt); p.parryCd = Math.max(0, p.parryCd - dt);
+  p.hurtT = Math.max(0, p.hurtT - dt); w.flash = Math.max(0, w.flash - dt);
+  let mv = 0; if (keys.KeyA || keys.ArrowLeft || pad.l) mv -= 1; if (keys.KeyD || keys.ArrowRight || pad.r) mv += 1;
+  const spd = p.dodgeT > 0 ? 420 : 215;
+  if (mv) { p.x = clamp(p.x + mv * spd * dt, 46, 914); p.face = mv; }
+  p.dodgeT = Math.max(0, p.dodgeT - dt);
+  if (p.atkT <= 0 && p.dodgeT <= 0) p.breath = Math.min(100, p.breath + 17 * dt);
+  if (p.x < 130 && p.hp < 100) { p.hp = Math.min(100, p.hp + 11 * dt); }
+  if (G.bleed && !I.noteSpent) { I.oil = Math.max(0, I.oil - dt); }
+  ironButtons();
+  // — the Warden's tempo —
+  const dx = p.x - w.x, adx = Math.abs(dx);
+  w.t -= dt;
+  if (w.state === 'broken') { w.brokenT -= dt; if (w.brokenT <= 0) { w.state = 'approach'; w.posture = 0; } }
+  else if (w.posture >= 100) { w.state = 'broken'; w.brokenT = 3; w.flash = 0.4; G.shake = 0.25;
+    say('POSTURE BROKEN — three seconds of truth. Strike!'); tone(120, 40, 0.5, 'sawtooth', 0.14); }
+  else if (w.state === 'approach') { if (adx > 88) w.x += Math.sign(dx) * 95 * dt; else { w.state = 'tell'; w.t = (G.bleed && I.oil <= 0) ? 0.34 : 0.65; } }
+  else if (w.state === 'tell') { if (w.t <= 0) { w.state = 'strike'; w.t = 0.18;
+      if (adx < 100) { if (p.parryT > 0) { w.posture += 27; p.parryT = 0; G.shake = 0.15;
+          say('PARRIED on the beat — his ring leaps.'); tone(880, 1320, 0.16, 'sine', 0.11); }
+        else if (p.dodgeT > 0) { say('His blade cuts the space you were standing in.'); }
+        else if (p.hurtT <= 0) { p.hp -= 14; p.hurtT = 0.6; G.shake = 0.3; tone(90, 45, 0.3, 'sawtooth', 0.13);
+          say('The strike lands — 14 Hold gone. Parry the tell (L), or dodge through it (Shift).'); ironCheckEnd(); } } } }
+  else if (w.state === 'strike') { if (w.t <= 0) { w.state = 'recover'; w.t = 0.95; } }
+  else if (w.state === 'recover') { if (w.t <= 0) w.state = 'approach'; }
+}
+function fighter(x, col, scale, opts = {}) {
+  ctx.save(); ctx.translate(x, 428); ctx.scale(scale, scale);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-16, -64); ctx.lineTo(0, -84); ctx.lineTo(16, -64); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#f2e6c8'; ctx.beginPath(); ctx.arc(0, -92, 10, 0, 7); ctx.fill();
+  if (opts.blade) { ctx.strokeStyle = '#ffb59d'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(14 * (opts.face || 1), -52); ctx.lineTo(44 * (opts.face || 1), -64 - (opts.raise || 0)); ctx.stroke(); }
+  if (opts.ward) { ctx.strokeStyle = opts.tell ? '#ffdf6b' : '#9a9ab0'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(-10, -56); ctx.lineTo(-52, -70 - (opts.raise || 0)); ctx.stroke(); }
+  ctx.restore();
+}
+function drawIronreach() {
+  const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#241016'); gr.addColorStop(1, '#0d0709');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#3a2320'; for (let i = 0; i < 7; i++) ctx.fillRect(30 + i * 140, 120 + (i % 3) * 40, 16, 310);
+  ctx.fillStyle = '#57444a'; ctx.fillRect(0, 428, W, 4);
+  ctx.fillStyle = 'rgba(255,150,80,0.05)'; ctx.fillRect(0, 432, W, H - 432);
+  // campfire
+  const fx = 74, fy = 428;
+  ctx.fillStyle = '#ff9a3c'; ctx.beginPath(); ctx.arc(fx, fy - 8 - Math.sin(I.fireT * 9) * 2, 9 + Math.sin(I.fireT * 13) * 2, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffd977'; ctx.font = '11px Georgia'; ctx.textAlign = 'center'; ctx.fillText('CAMPFIRE — Hold repairs', fx, fy + 22);
+  // fighters
+  fighter(I.p.x, I.p.hurtT > 0 ? '#ff8c9a' : '#ffd977', 1, { blade: true, face: I.p.face, raise: I.p.atkT > 0 ? 26 : 0 });
+  if (I.p.parryT > 0) { ctx.strokeStyle = '#35e0d0'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(I.p.x, 428 - 52, 34, -1.2, 1.2); ctx.stroke(); }
+  const w = I.w;
+  fighter(w.x, w.state === 'broken' ? '#8a8aa0' : '#4a4a66', 1.35, { ward: true, tell: w.state === 'tell', raise: w.state === 'tell' ? 30 : w.state === 'strike' ? -18 : 0 });
+  // posture ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(w.x, 428 - 66, 30, 0, 7); ctx.stroke();
+  ctx.strokeStyle = w.state === 'broken' ? '#ffd977' : '#ffdf6b';
+  ctx.beginPath(); ctx.arc(w.x, 428 - 66, 30, -Math.PI / 2, -Math.PI / 2 + (w.posture / 100) * Math.PI * 2); ctx.stroke();
+  if (w.state === 'tell') { ctx.fillStyle = '#ffdf6b'; ctx.font = 'bold 15px Georgia'; ctx.textAlign = 'center'; ctx.fillText('— THE TELL —', w.x, 428 - 150); }
+  if (w.state === 'broken') { ctx.fillStyle = '#ffd977'; ctx.font = 'bold 15px Georgia'; ctx.textAlign = 'center'; ctx.fillText('BROKEN', w.x, 428 - 150); }
+  // HUD
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = '13px Georgia';
+  ctx.fillText('HOLD', 24, 30); bar(70, 20, 220, 12, I.p.hp / 100, '#7be495');
+  ctx.fillText('BREATH', 24, 54); bar(70, 44, 220, 10, I.p.breath / 100, '#35e0d0');
+  ctx.textAlign = 'right'; ctx.fillText('THE WARDEN OF IRON', W - 24, 30);
+  bar(W - 290, 20, 220, 12, w.hp / w.max, '#ff5566');
+  ctx.fillStyle = '#cdbcf5'; ctx.font = '12px Georgia';
+  ctx.fillText('A/D move · J strike · L parry · Shift dodge', W - 24, 54);
+  if (G.bleed && !I.noteSpent) { ctx.textAlign = 'left'; ctx.fillStyle = '#ffd977';
+    ctx.fillText(`BLEED — HOLLOWDEEP'S LIGHT CLOCK: ${Math.ceil(I.oil)}`, 24, 84);
+    const dark = clamp(1 - I.oil / 90, 0, 1) * 0.55;
+    ctx.fillStyle = `rgba(2,0,8,${dark})`; ctx.fillRect(0, 0, W, H); }
+  if (I.p.x < 130) { ctx.fillStyle = '#ffd977'; ctx.font = '13px Georgia'; ctx.textAlign = 'center';
+    ctx.fillText('the fire repairs your Hold', 220, 380); }
+}
+
+// ================= TITLE & END =================
+function titleInit() { G.mode = 'title';
+  say('CONCORDANCE — Nine Worlds, One Rulebook. The vertical slice: Aetheris, the Seam, Ironreach.');
+  setBtns([{ label: 'BEGIN — AETHERIS', sub: 'the turn-based realm', cls: 'gold', fn: () => { aetherisInit(); G.mode = 'aetheris'; } }]); }
+function drawTitle() {
+  const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#0d0620'); gr.addColorStop(1, '#05030c');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  const cols = ['#35e0d0', '#4da6ff', '#c77dff', '#ff6a4d', '#7be495', '#ffd977', '#ff8c9a', '#9fd8ff', '#e8b84b'];
+  cols.forEach((c, i) => { const x = 190 + i * 72, y = 120 + Math.sin(G.t * 0.8 + i) * 8;
+    ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, 13, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(232,163,60,0.6)'; ctx.lineWidth = 2;
+    if (i < 8) { ctx.beginPath(); ctx.moveTo(x + 13, y); ctx.lineTo(x + 59, 120 + Math.sin(G.t * 0.8 + i + 1) * 8); ctx.stroke(); } });
+  ctx.fillStyle = '#ffd977'; ctx.font = 'bold 52px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('CONCORDANCE', W / 2, 250);
+  ctx.fillStyle = '#ece5ff'; ctx.font = '19px Georgia';
+  ctx.fillText('Nine Worlds, One Rulebook', W / 2, 288);
+  ctx.fillStyle = '#cdbcf5'; ctx.font = '15px Georgia';
+  ctx.fillText('You are the Index. Carry one Thread across the seams. Choose what bleeds.', W / 2, 340);
+  ctx.fillText('The Unwriting wants one rulebook for everything. Write the tenth rule.', W / 2, 366);
+  ctx.fillStyle = '#e8a33c'; ctx.font = 'italic 14px Georgia';
+  ctx.fillText('A single rulebook is tyranny. Difference is what makes play worth anything.', W / 2, 430);
+}
+function endInit() { G.mode = 'end'; $pad.style.display = 'none';
+  say('The slice ends. Two grammars learned, two Rulebound met, one Thread re-expressed twice.');
+  setBtns([{ label: 'RUN THE SLICE AGAIN', sub: 'fluency carries in you, not the save', cls: 'gold', fn: () => location.reload() }]); }
+function drawEnd() {
+  const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#141033'); gr.addColorStop(1, '#05030c');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ffd977'; ctx.font = 'bold 36px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('THE DOOR OPENS', W / 2, 150);
+  ctx.fillStyle = '#ece5ff'; ctx.font = '17px Georgia';
+  ctx.fillText('FLUENCY 2 — Aetheris attuned · Ironreach endured', W / 2, 210);
+  ctx.fillText('The Note re-expresses again in your pocket: it is now a card, still unplayed.', W / 2, 250);
+  ctx.fillText('Seven realms remain: Vaelmarch · Loom · Hollowdeep · the Tenderfold ·', W / 2, 300);
+  ctx.fillText('the Marches · Umbra · Concord. The seams between them are the game.', W / 2, 326);
+  ctx.fillStyle = '#e8a33c'; ctx.font = 'italic 15px Georgia';
+  ctx.fillText('"A party is a sentence." · "Courage is a timing problem."', W / 2, 400);
+}
+
+// ================= loop =================
+let last = performance.now();
+function loop(now) { requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; G.t += dt;
+  if (G.shake > 0) { G.shake -= dt; ctx.save(); ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8); }
+  if (G.mode === 'title') drawTitle();
+  else if (G.mode === 'aetheris') { aetherisTick(dt); drawAetheris(); }
+  else if (G.mode === 'seam') drawSeam();
+  else if (G.mode === 'ironreach') { ironTick(dt); drawIronreach(); }
+  else if (G.mode === 'end') drawEnd();
+  if (G.shake > 0) ctx.restore();
+}
+titleInit();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
