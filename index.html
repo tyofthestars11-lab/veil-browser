@@ -66,7 +66,7 @@
   <div class="bar" style="height:7px; margin-top:3px;"><div id="xpfill" style="background:#1ae8c8; width:0%; height:100%;"></div></div>
   <div class="label" id="lvtext">LV 1 · kills 0</div>
 </div>
-<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div><div id="lore"></div><div id="quest" style="font-size:12px; color:#e8b84b; margin-top:2px; letter-spacing:1px;"></div></div>
+<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div><div id="lore"></div><div id="quest" style="font-size:12px; color:#e8b84b; margin-top:2px; letter-spacing:1px;"></div><div id="statusline" style="font-size:12px; color:#9fd8ff; margin-top:3px; letter-spacing:2px; text-shadow:0 1px 3px #000;"></div></div>
 <div class="hud" id="hud-right">
   <div class="label">SIGNAL <span id="signal">0%</span></div>
   <div class="label">GOLD <span id="gold">0</span></div>
@@ -1135,6 +1135,13 @@ function animate() {
   { const boss = drones.find(d => d.boss), bb = $('bossbar');
     if (boss) { bb.style.display = 'block'; $('bossfill').style.width = Math.max(0, boss.hp / boss.maxHp * 100) + '%'; }
     else if (bb.style.display !== 'none') bb.style.display = 'none'; }
+  { // STATUSLINE (v1.9 GODVERSE harvest): ROUTE + WARDEN THREAT + CLIMB, the scouts' best instruments brought home
+    let nd = 1e9; for (const d of drones) { if (d.hp > 0) { const dd = Math.hypot(d.mesh.position.x - player.pos.x, d.mesh.position.z - player.pos.z); if (dd < nd) nd = dd; } }
+    const threat = drones.some(d => d.boss && d.hp > 0) ? 'PRIME' : nd < 25 ? 'HIGH' : nd < 55 ? 'GUARDED' : 'LOW';
+    const climb = Math.round(((S.level * 4 + Math.min(3, S.frags || 0) + (S.artifact ? 1 : 0)) / 12) * 100);
+    const route = [0, 1, 2].map(i => i < S.level ? '◆' : i === S.level ? '◈' : '◇').join(' ');
+    const txt = `ROUTE ${route} · WARDEN THREAT ${threat} · CLIMB ${climb}%`;
+    const sl = $('statusline'); if (sl && sl.textContent !== txt) sl.textContent = txt; }
   { const dust = world ? world.getObjectByName('dust') : null;
     if (dust) { dust.rotation.y = t * 0.008; dust.position.y = Math.sin(t * 0.35) * 0.6; } }
   drawMinimap();
