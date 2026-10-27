@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>VEIL: THE LAST SIGNAL — Browser Edition</title>
+<meta name="theme-color" content="#0a0a14">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{})}</script>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#0a0a14; height:100%;
+    font-family: 'Courier New', monospace; color:#f0dcc8; -webkit-user-select:none; user-select:none;
+    touch-action:none; }
+  #game { position:fixed; inset:0; }
+  canvas { display:block; }
+  .hud { position:fixed; z-index:5; pointer-events:none; }
+  #hud-left { top:10px; left:12px; }
+  #hud-right { top:10px; right:12px; text-align:right; }
+  #hud-center { top:10px; left:50%; transform:translateX(-50%); text-align:center; width:70%; }
+  .bar { width:210px; height:14px; border:2px solid #0a0a14; background:#461e1e; margin-top:4px; }
+  .bar > div { height:100%; background:#be2633; width:100%; }
+  .label { font-size:13px; letter-spacing:1px; text-shadow:0 1px 2px #000; }
+  #objective { font-size:14px; color:#e8b84b; text-shadow:0 1px 3px #000; }
+  #signal { color:#e8b84b; }
+  #godtag { color:#e8b84b; font-weight:bold; display:none; }
+  #crosshair { position:fixed; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
+    border-radius:50%; background:#e8b84b; z-index:5; pointer-events:none; opacity:.9; }
+  #hint { bottom:8px; left:50%; transform:translateX(-50%); font-size:12px; opacity:.75; text-align:center; width:100%; }
+  .overlay { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; background:rgba(8,6,16,.88); text-align:center; padding:20px; }
+  .overlay h1 { color:#e8b84b; font-size:42px; margin:0 0 4px 0; letter-spacing:3px; }
+  .overlay h2 { color:#f0dcc8; font-size:16px; margin:0 0 18px 0; font-weight:normal; letter-spacing:2px; }
+  .overlay p { max-width:560px; line-height:1.55; font-size:14px; }
+  .btn { pointer-events:auto; cursor:pointer; background:#1c0e12; color:#e8b84b; border:2px solid #e8b84b;
+    font-family:inherit; font-size:18px; letter-spacing:2px; padding:12px 34px; margin-top:16px; border-radius:8px; }
+  .btn:active { background:#e8b84b; color:#1c0e12; }
+  #end { display:none; }
+  /* touch controls */
+  #stick { position:fixed; left:26px; bottom:30px; width:118px; height:118px; border-radius:50%;
+    border:2px solid rgba(232,184,75,.55); background:rgba(28,14,18,.35); z-index:6; display:none; }
+  #stick-knob { position:absolute; left:50%; top:50%; width:52px; height:52px; margin:-26px 0 0 -26px;
+    border-radius:50%; background:rgba(232,184,75,.5); }
+  .tbtn { position:fixed; z-index:6; width:64px; height:64px; border-radius:50%; display:none;
+    border:2px solid rgba(232,184,75,.55); background:rgba(28,14,18,.4); color:#f0dcc8;
+    font-family:inherit; font-size:12px; letter-spacing:1px; }
+  #btn-fire { right:30px; bottom:104px; }
+  #btn-jump { right:108px; bottom:36px; }
+  #btn-god { right:30px; bottom:186px; color:#e8b84b; }
+  body.touch .tbtn, body.touch #stick { display:block; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="crosshair"></div>
+<div class="hud" id="hud-left">
+  <div class="label" id="levelname">SECTOR 1</div>
+  <div class="bar"><div id="hpfill"></div></div>
+  <div class="label" id="hptext">HP 100/100</div>
+</div>
+<div class="hud" id="hud-center"><div id="objective">Find the signal fragments.</div></div>
+<div class="hud" id="hud-right">
+  <div class="label">SIGNAL <span id="signal">0%</span></div>
+  <div class="label">GOLD <span id="gold">0</span></div>
+  <div class="label" id="godtag">GODMODE</div>
+</div>
+<div class="hud label" id="hint">WASD move · mouse look · CLICK fire · SHIFT sprint · SPACE hop · G godmode</div>
+
+<div id="stick"><div id="stick-knob"></div></div>
+<button class="tbtn" id="btn-fire">FIRE</button>
+<button class="tbtn" id="btn-jump">HOP</button>
+<button class="tbtn" id="btn-god">GOD</button>
+
+<div class="overlay" id="start">
+  <h1>VEIL</h1>
+  <h2>THE LAST SIGNAL — BROWSER EDITION</h2>
+  <p>An abandoned megastructure. An ancient signal waking under the stone.
+     Hostile machines hold the districts for four factions who agree on one thing: you do not belong here.</p>
+  <p>Recover <b style="color:#e8b84b">3 signal fragments</b> and the <b style="color:#e8b84b">golden artifact</b> in each sector,
+     wake the beacon, and clear the wave. Three sectors. The counts climb the Fibonacci ladder: 3, 5, 8.</p>
+  <p style="opacity:.8">Move WASD · Look mouse / drag · Fire click / F · Sprint SHIFT · Hop SPACE · GODMODE G<br>
+     On touch screens: left stick, FIRE and HOP buttons, drag right side to look.</p>
+  <button class="btn" id="btn-start">ENTER THE SIGNAL</button>
+</div>
+
+<div class="overlay" id="end">
+  <h1 id="end-title">SIGNAL SECURED</h1>
+  <p id="end-text"></p>
+  <button class="btn" id="btn-again">PLAY AGAIN</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ============================== PHI CORE ==============================
+const PHI = (1 + Math.sqrt(5)) / 2;
+const GOLDEN_ANGLE = 222.4922 * Math.PI / 180;   // Tyree's golden angle
+const fib = n => { let a = 0, b = 1; for (let i = 0; i < n; i++) [a, b] = [b, a + b]; return a; };
+const rung = x => Math.log(x) / Math.log(PHI);
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ============================== LEVELS ==============================
+const FACTIONS = [
+  { name: 'VOID',      color: 0x9b30ff },
+  { name: 'SCAVENGER', color: 0xff8c1a },
+  { name: 'GUARDIAN',  color: 0x1ae8c8 },
+  { name: 'REMNANT',   color: 0xb8b8c8 },
+];
+const LEVELS = [
+  { name: 'SECTOR 1 — THE HUB',  seed: 1618, drones: fib(3), sky: 0x1a1030, fog: 0x241536,
+    accent: 0x1ae8c8, droneSpeed: 5.2, droneHp: 68 },
+  { name: 'SECTOR 2 — THE NEST', seed: 2618, drones: fib(4), sky: 0x0d0a1e, fog: 0x180d24,
+    accent: 0xff3860, droneSpeed: 6.4, droneHp: 88 },
+  { name: 'SECTOR 3 — THE SPIRE', seed: 4242, drones: fib(5), sky: 0x05050f, fog: 0x0d0d1f,
+    accent: 0xe8b84b, droneSpeed: 7.6, droneHp: 110 },
+];
+
+// ============================== RENDERER ==============================
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.getElementById('game').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 600);
+scene.add(new THREE.HemisphereLight(0x8a7bd8, 0x1a0f14, 0.85));
+const sun = new THREE.DirectionalLight(0xffd9a0, 1.1);
+sun.position.set(40, 80, 25);
+scene.add(sun);
+const beaconLight = new THREE.PointLight(0xe8b84b, 0, 90);
+scene.add(beaconLight);
+
+// ============================== STATE ==============================
+const S = {
+  mode: 'menu',           // menu | play | won | lost
+  level: 0, hp: 100, maxHp: 100, gold: 0,
+  signal: 0, clues: 0, artifact: false, beaconReady: false, wave: false,
+  god: false, started: false,
+};
+const player = {
+  pos: new THREE.Vector3(0, 0, 52), vy: 0, grounded: true,
+  yaw: Math.PI, pitch: -0.18, speed: 13,
+};
+let world = null;         // per-level group + colliders + pickups
+const drones = [];
+const particles = [];
+const keys = {};
+let fireCooldown = 0, beam = null, beamLife = 0;
+
+// ============================== WORLD BUILD ==============================
+const MAT = {
+  stone:  new THREE.MeshStandardMaterial({ color: 0x3a3550, roughness: 0.95 }),
+  stone2: new THREE.MeshStandardMaterial({ color: 0x2a2740, roughness: 0.95 }),
+  broken: new THREE.MeshStandardMaterial({ color: 0x4a3a34, roughness: 1 }),
+  gold:   new THREE.MeshStandardMaterial({ color: 0xe8b84b, emissive: 0x8a6a1f, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.6 }),
+  dark:   new THREE.MeshStandardMaterial({ color: 0x14121f, roughness: 0.9 }),
+};
+let colliders = [];   // {x, z, r}
+let pickups = [];     // {mesh, kind, taken}
+let beaconMesh = null;
+
+function burst(pos, color, n = 22) {
+  const geo = new THREE.BufferGeometry();
+  const p = new Float32Array(n * 3), v = [];
+  for (let i = 0; i < n; i++) {
+    p[i*3] = pos.x; p[i*3+1] = pos.y; p[i*3+2] = pos.z;
+    const a = Math.random() * Math.PI * 2, b = Math.random() * Math.PI - Math.PI/2, s = 4 + Math.random() * 7;
+    v.push(new THREE.Vector3(Math.cos(a)*Math.cos(b)*s, Math.sin(b)*s + 3, Math.sin(a)*Math.cos(b)*s));
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  const points = new THREE.Points(geo, new THREE.PointsMaterial({ color, size: 0.35, transparent: true }));
+  scene.add(points);
+  particles.push({ points, v, life: 0.9 });
+}
+
+function box(w, h, d, mat, x, y, z, ry = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z); m.rotation.y = ry;
+  world.add(m); return m;
+}
+
+function spawnDrone(rng, lvl, aggro = false) {
+  const faction = FACTIONS[Math.floor(rng() * FACTIONS.length)];
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.15),
+    new THREE.MeshStandardMaterial({ color: faction.color, emissive: faction.color, emissiveIntensity: 0.45, roughness: 0.4, metalness: 0.3 }));
+  body.rotation.x = Math.PI / 4;
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff2233, emissiveIntensity: 1.6 }));
+  eye.position.set(0, 0, -0.85);
+  g.add(body); g.add(eye);
+  const ang = rng() * Math.PI * 2, rad = 22 + rng() * 52;
+  g.position.set(Math.cos(ang) * rad, 2.6 + rng() * 2.2, Math.sin(ang) * rad);
+  scene.add(g);
+  drones.push({
+    mesh: g, body, hp: lvl.droneHp, maxHp: lvl.droneHp, faction,
+    state: aggro ? 'chase' : 'patrol', wp: null, wpT: 0, zapT: 1 + rng() * 1.5,
+    speed: lvl.droneSpeed * (0.85 + rng() * 0.3), bob: rng() * Math.PI * 2, flash: 0,
+  });
+}
+
+function buildLevel(idx) {
+  if (world) { scene.remove(world); world.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  for (const d of drones) scene.remove(d.mesh);
+  drones.length = 0;
+  for (const p of particles) scene.remove(p.points);
+  particles.length = 0;
+  pickups = []; colliders = [];
+  const lvl = LEVELS[idx];
+  const rng = mulberry32(lvl.seed);
+  world = new THREE.Group(); scene.add(world);
+  scene.background = new THREE.Color(lvl.sky);
+  scene.fog = new THREE.Fog(lvl.fog, 55, 210);
+  const accentMat = new THREE.MeshStandardMaterial({ color: lvl.accent, emissive: lvl.accent, emissiveIntensity: 0.85, roughness: 0.4 });
+
+  // ground + phi terraces: 90, 90/phi, 90/phi^2
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(95, 48), MAT.stone2);
+  ground.rotation.x = -Math.PI / 2; world.add(ground);
+  [90, 90 / PHI, 90 / (PHI * PHI)].forEach((r, i) => {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 1.1, r, 64),
+      new THREE.MeshStandardMaterial({ color: lvl.accent, emissive: lvl.accent, emissiveIntensity: 0.22, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02 + i * 0.005; world.add(ring);
+  });
+
+  // central spire - stacked phi-scaled tiers + beacon
+  let sy = 0;
+  [11, 11 / PHI, 11 / (PHI * PHI)].forEach((w) => {
+    const h = 5.2;
+    box(w * 2, h, w * 2, MAT.stone, 0, sy + h / 2, 0);
+    sy += h;
+  });
+  box(13, 0.7, 13, accentMat, 0, 5.2, 0); box(9, 0.7, 9, accentMat, 0, 10.4, 0);
+  colliders.push({ x: 0, z: 0, r: 12.5 });
+  beaconMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 0), MAT.gold.clone());
+  beaconMesh.position.set(0, sy + 2.6, 0); world.add(beaconMesh);
+  beaconLight.position.set(0, sy + 3, 0);
+
+  // phyllotaxis pillars at the golden angle
+  for (let i = 0; i < 34; i++) {
+    const a = i * GOLDEN_ANGLE, r = 17 + Math.sqrt(i) * 11.5;
+    if (r > 88) break;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const h = 3 + rng() * 9;
+    box(2.2, h, 2.2, i % 3 ? MAT.stone : MAT.broken, x, h / 2, z, a);
+    if (i % 4 === 0) box(2.5, 0.4, 2.5, accentMat, x, h + 0.2, z, a);
+    colliders.push({ x, z, r: 1.9 });
+  }
+  // perimeter wall segments with accent caps
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + 0.2, x = Math.cos(a) * 90, z = Math.sin(a) * 90;
+    box(16, 6 + rng() * 5, 2.4, MAT.dark, x, 3, z, -a + Math.PI / 2);
+  }
+  // scattered ruins
+  for (let i = 0; i < 16; i++) {
+    const a = rng() * Math.PI * 2, r = 20 + rng() * 62, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (Math.hypot(x, z) < 16) continue;
+    box(2 + rng() * 4, 1 + rng() * 3.4, 2 + rng() * 3, MAT.broken, x, 1, z, rng() * 3);
+    colliders.push({ x, z, r: 2.4 });
+  }
+
+  // pickups: 3 signal fragments (terminals) + 1 golden artifact
+  const spots = [];
+  while (spots.length < 4) {
+    const a = rng() * Math.PI * 2, r = 26 + rng() * 48;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (spots.some(s => Math.hypot(s[0] - x, s[1] - z) < 18)) continue;
+    spots.push([x, z]);
+  }
+  spots.forEach(([x, z], i) => {
+    if (i < 3) {
+      box(1.1, 2.4, 1.1, MAT.dark, x, 1.2, z);
+      const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.62),
+        new THREE.MeshStandardMaterial({ color: lvl.accent, emissive: lvl.accent, emissiveIntensity: 1.5 }));
+      orb.position.set(x, 3.3, z); world.add(orb);
+      pickups.push({ mesh: orb, kind: 'clue', taken: false });
+    } else {
+      const art = new THREE.Mesh(new THREE.TorusKnotGeometry(0.72, 0.24, 72, 10), MAT.gold.clone());
+      art.position.set(x, 2.2, z); world.add(art);
+      pickups.push({ mesh: art, kind: 'artifact', taken: false });
+    }
+  });
+
+  for (let i = 0; i < lvl.drones; i++) spawnDrone(rng, lvl);
+  player.pos.set(0, 0, 52); player.yaw = Math.PI; player.pitch = -0.18; player.vy = 0;
+  S.hp = S.maxHp; S.clues = 0; S.artifact = false; S.signal = 0; S.beaconReady = false; S.wave = false;
+  updateHUD();
+  setObjective(`Recover 3 signal fragments + the golden artifact. Hostiles: ${lvl.drones} ${FACTIONS.map(f=>f.name).join('/')} machines.`);
+}
+
+// ============================== HUD ==============================
+const $ = id => document.getElementById(id);
+function updateHUD() {
+  $('levelname').textContent = LEVELS[S.level].name;
+  $('hpfill').style.width = Math.max(0, S.hp / S.maxHp * 100) + '%';
+  $('hptext').textContent = `HP ${Math.ceil(S.hp)}/${S.maxHp}`;
+  $('signal').textContent = S.signal + '%';
+  $('gold').textContent = S.gold;
+  $('godtag').style.display = S.god ? 'block' : 'none';
+}
+function setObjective(t) { $('objective').textContent = t; }
+function showEnd(title, text, btn) {
+  S.mode = title === 'SIGNAL SECURED' ? 'won' : (title === 'SECTOR CLEARED' ? 'between' : 'lost');
+  $('end-title').textContent = title;
+  $('end-text').textContent = text;
+  $('btn-again').textContent = btn;
+  $('end').style.display = 'flex';
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+// ============================== INPUT ==============================
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyG' && S.mode === 'play') { S.god = !S.god; updateHUD(); }
+  if ((e.code === 'KeyP' || e.code === 'Escape') && S.mode === 'play') { /* pointer lock handles pause feel */ }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+const canvas = renderer.domElement;
+canvas.addEventListener('click', () => {
+  if (S.mode === 'play' && !('ontouchstart' in window)) canvas.requestPointerLock();
+  if (S.mode === 'play') tryFire();
+});
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
+let locked = false;
+document.addEventListener('mousemove', e => {
+  if (!locked || S.mode !== 'play') return;
+  player.yaw -= e.movementX * 0.0023;
+  player.pitch = Math.max(-1.25, Math.min(1.25, player.pitch - e.movementY * 0.0023));
+});
+
+// touch: dynamic joystick + buttons + drag look
+const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+if (isTouch) document.body.classList.add('touch');
+const stickVec = { x: 0, y: 0 };
+let stickId = null, lookId = null, lookLast = null, firing = false;
+const stickEl = $('stick'), knobEl = $('stick-knob');
+function onTouchStart(e) {
+  for (const t of e.changedTouches) {
+    if (t.clientX < innerWidth * 0.42 && t.clientY > innerHeight * 0.5 && stickId === null) {
+      stickId = t.identifier;
+    } else if (lookId === null && t.target === canvas) {
+      lookId = t.identifier; lookLast = { x: t.clientX, y: t.clientY };
+    }
+  }
+}
+function onTouchMove(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === stickId) {
+      const r = stickEl.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      let dx = (t.clientX - cx) / (r.width / 2), dy = (t.clientY - cy) / (r.height / 2);
+      const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+      stickVec.x = dx; stickVec.y = dy;
+      knobEl.style.transform = `translate(${dx * 32}px, ${dy * 32}px)`;
+    } else if (t.identifier === lookId && lookLast) {
+      player.yaw -= (t.clientX - lookLast.x) * 0.005;
+      player.pitch = Math.max(-1.25, Math.min(1.25, player.pitch - (t.clientY - lookLast.y) * 0.005));
+      lookLast = { x: t.clientX, y: t.clientY };
+    }
+  }
+  if (S.mode === 'play') e.preventDefault();
+}
+function onTouchEnd(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === stickId) { stickId = null; stickVec.x = 0; stickVec.y = 0; knobEl.style.transform = ''; }
+    if (t.identifier === lookId) { lookId = null; lookLast = null; }
+  }
+}
+addEventListener('touchstart', onTouchStart, { passive: true });
+addEventListener('touchmove', onTouchMove, { passive: false });
+addEventListener('touchend', onTouchEnd); addEventListener('touchcancel', onTouchEnd);
+$('btn-fire').addEventListener('touchstart', e => { firing = true; e.preventDefault(); }, { passive: false });
+$('btn-fire').addEventListener('touchend', () => firing = false);
+$('btn-jump').addEventListener('touchstart', e => { hop(); e.preventDefault(); }, { passive: false });
+$('btn-god').addEventListener('touchstart', e => { S.god = !S.god; updateHUD(); e.preventDefault(); }, { passive: false });
+function hop() { if (player.grounded && S.mode === 'play') { player.vy = 8.4; player.grounded = false; } }
+
+// ============================== COMBAT ==============================
+const raycaster = new THREE.Raycaster();
+function tryFire() {
+  if (fireCooldown > 0 || S.mode !== 'play') return;
+  fireCooldown = S.god ? 0.11 : 0.22;
+  const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
+  const origin = player.pos.clone().add(new THREE.Vector3(0, 1.7, 0));
+  raycaster.set(origin, dir); raycaster.far = 70;
+  const meshes = [];
+  drones.forEach(d => { d.body.userData.drone = d; meshes.push(d.body); });
+  const hits = raycaster.intersectObjects(meshes, false);
+  let end = origin.clone().add(dir.clone().multiplyScalar(70));
+  if (hits.length) {
+    const d = hits[0].object.userData.drone;
+    end = hits[0].point;
+    const dmg = S.god ? 34 * PHI * PHI : 34;
+    d.hp -= dmg; d.flash = 0.12; d.state = 'chase';
+    burst(hits[0].point, d.faction.color, 8);
+    if (d.hp <= 0) killDrone(d);
+  }
+  const bg = new THREE.BufferGeometry().setFromPoints([origin, end]);
+  beam = new THREE.Line(bg, new THREE.LineBasicMaterial({ color: 0xe8b84b, transparent: true, opacity: 0.95 }));
+  scene.add(beam); beamLife = 0.07;
+}
+function killDrone(d) {
+  burst(d.mesh.position, d.faction.color, 26);
+  burst(d.mesh.position, 0xe8b84b, 10);
+  scene.remove(d.mesh);
+  drones.splice(drones.indexOf(d), 1);
+  const loot = 8 + Math.floor(Math.random() * 5) * 2;
+  S.gold += S.god ? Math.round(loot * PHI) : loot;
+  updateHUD();
+  checkWaveEnd();
+}
+function checkWaveEnd() {
+  if (S.wave && drones.length === 0 && S.mode === 'play') {
+    setObjective('Wave cleared. TOUCH THE BEACON at the spire base.');
+  }
+}
+
+// ============================== FLOW ==============================
+function collectPickup(p) {
+  p.taken = true; world.remove(p.mesh);
+  burst(p.mesh.position, 0xe8b84b, 20);
+  if (p.kind === 'clue') { S.clues++; S.signal += 25; setObjective(`Fragment ${S.clues}/3 secured. Signal ${S.signal}%.`); }
+  else { S.artifact = true; S.signal += 25; setObjective(`Golden artifact secured. Signal ${S.signal}%.`); }
+  S.gold += 21;
+  if (S.signal >= 100 && !S.beaconReady) {
+    S.beaconReady = true;
+    beaconMesh.material.emissiveIntensity = 2.4;
+    setObjective('SIGNAL COMPLETE. Reach the spire — the final wave wakes. Touch the beacon to seal the sector.');
+  }
+  updateHUD();
+}
+function completeLevel() {
+  const lvl = LEVELS[S.level];
+  S.gold += Math.round(55 * PHI);
+  if (S.level >= LEVELS.length - 1) {
+    showEnd('SIGNAL SECURED', `The megastructure answers. All three sectors sealed, ${S.gold} gold carried out of the Veil. The last signal was never lost — it was waiting for you.`, 'PLAY AGAIN');
+  } else {
+    showEnd('SECTOR CLEARED', `${lvl.name} is sealed. ${S.gold} gold banked. The signal climbs — ${LEVELS[S.level + 1].name} wakes below.`, 'ENTER NEXT SECTOR');
+  }
+  updateHUD();
+}
+
+$('btn-start').addEventListener('click', () => {
+  $('start').style.display = 'none';
+  S.level = 0; S.gold = 0; S.god = false; S.started = true;
+  buildLevel(0);
+  S.mode = 'play';
+  if (!isTouch) canvas.requestPointerLock();
+});
+$('btn-again').addEventListener('click', () => {
+  $('end').style.display = 'none';
+  if (S.mode === 'between') { S.level++; buildLevel(S.level); }
+  else if (S.mode === 'lost') { buildLevel(S.level); }
+  else { S.level = 0; S.gold = 0; buildLevel(0); }
+  S.mode = 'play';
+  if (!isTouch) canvas.requestPointerLock();
+});
+
+// ============================== MAIN LOOP ==============================
+const clock = new THREE.Clock();
+const fwd = new THREE.Vector3(), rgt = new THREE.Vector3(), mv = new THREE.Vector3();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  if (S.mode === 'play') {
+    // movement
+    fwd.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    rgt.set(-fwd.z, 0, fwd.x);
+    mv.set(0, 0, 0);
+    if (keys['KeyW'] || keys['ArrowUp']) mv.add(fwd);
+    if (keys['KeyS'] || keys['ArrowDown']) mv.sub(fwd);
+    if (keys['KeyD'] || keys['ArrowRight']) mv.add(rgt);
+    if (keys['KeyA'] || keys['ArrowLeft']) mv.sub(rgt);
+    if (Math.abs(stickVec.x) > 0.12 || Math.abs(stickVec.y) > 0.12) {
+      mv.addScaledVector(rgt, stickVec.x); mv.addScaledVector(fwd, -stickVec.y);
+    }
+    const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+    if (mv.lengthSq() > 0) {
+      mv.normalize().multiplyScalar(player.speed * (sprint ? 1.62 : 1) * dt);
+      player.pos.add(mv);
+    }
+    if (keys['Space']) hop();
+    // gravity / hop
+    if (!player.grounded) {
+      player.vy -= 24 * dt; player.pos.y += player.vy * dt;
+      if (player.pos.y <= 0) { player.pos.y = 0; player.grounded = true; player.vy = 0; }
+    }
+    // collisions + bounds
+    for (const c of colliders) {
+      const dx = player.pos.x - c.x, dz = player.pos.z - c.z, d = Math.hypot(dx, dz);
+      if (d < c.r + 0.9 && d > 0.001) {
+        player.pos.x = c.x + dx / d * (c.r + 0.9);
+        player.pos.z = c.z + dz / d * (c.r + 0.9);
+      }
+    }
+    const rr = Math.hypot(player.pos.x, player.pos.z);
+    if (rr > 87) { player.pos.x *= 87 / rr; player.pos.z *= 87 / rr; }
+
+    if (firing) tryFire();
+    fireCooldown = Math.max(0, fireCooldown - dt);
+
+    // pickups
+    for (const p of pickups) {
+      if (p.taken) continue;
+      p.mesh.rotation.y += dt * 1.4; p.mesh.position.y += Math.sin(t * 2.2 + p.mesh.position.x) * dt * 0.35;
+      if (player.pos.distanceTo(p.mesh.position.clone().setY(0)) < 3.0 && Math.abs(p.mesh.position.y - 2) < 3.4) collectPickup(p);
+    }
+    // beacon approach: trigger final wave, then completion touch
+    if (beaconMesh) {
+      beaconMesh.rotation.y += dt * (S.beaconReady ? 2.2 : 0.5);
+      beaconLight.intensity = S.beaconReady ? 60 + Math.sin(t * 5) * 18 : 6;
+      const bd = Math.hypot(player.pos.x, player.pos.z);
+      if (S.beaconReady && !S.wave && bd < 15) {
+        S.wave = true;
+        const rng = mulberry32(LEVELS[S.level].seed + 777);
+        const n = fib(S.level + 3);
+        for (let i = 0; i < n; i++) spawnDrone(rng, LEVELS[S.level], true);
+        setObjective(`FINAL WAVE — ${n} machines wake. Clear them, then touch the beacon.`);
+      } else if (S.beaconReady && S.wave && drones.length === 0 && bd < 14.5) {
+        completeLevel();
+      }
+    }
+
+    // drones
+    for (const d of [...drones]) {
+      const pos = d.mesh.position;
+      const toPlayer = player.pos.clone().setY(0).sub(pos.clone().setY(0));
+      const dist = toPlayer.length();
+      if (d.state === 'patrol') {
+        d.wpT -= dt;
+        if (!d.wp || d.wpT <= 0) {
+          const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 58;
+          d.wp = new THREE.Vector3(Math.cos(a) * r, pos.y, Math.sin(a) * r); d.wpT = 4 + Math.random() * 4;
+        }
+        const toWp = d.wp.clone().sub(pos); toWp.y = 0;
+        if (toWp.length() > 1.5) pos.add(toWp.normalize().multiplyScalar(d.speed * 0.45 * dt));
+        if (dist < 24) d.state = 'chase';
+      } else {
+        if (dist > 7) pos.add(toPlayer.normalize().multiplyScalar(d.speed * dt));
+        d.zapT -= dt;
+        if (dist < 17 && d.zapT <= 0) {
+          d.zapT = 1.35 + Math.random() * 0.5;
+          const zb = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([pos.clone(), player.pos.clone().add(new THREE.Vector3(0, 1.4, 0))]),
+            new THREE.LineBasicMaterial({ color: d.faction.color, transparent: true, opacity: 0.9 }));
+          scene.add(zb); setTimeout(() => scene.remove(zb), 90);
+          if (!S.god) {
+            S.hp -= 8; updateHUD();
+            if (S.hp <= 0) { S.hp = 0; updateHUD(); showEnd('SIGNAL LOST', 'The machines close over the megastructure. The signal dims — but it does not die. It waits for your next run.', 'TRY AGAIN'); }
+          }
+        }
+        if (dist > 42 && d.hp >= d.maxHp) d.state = 'patrol';
+      }
+      pos.y = 2.6 + Math.sin(t * 2 + d.bob) * 0.45;
+      d.mesh.lookAt(player.pos.x, pos.y, player.pos.z);
+      d.body.rotation.z += dt * 1.8;
+      if (d.flash > 0) { d.flash -= dt; d.body.material.emissiveIntensity = 2.2; }
+      else d.body.material.emissiveIntensity = 0.45;
+    }
+  }
+
+  // particles
+  for (const pt of [...particles]) {
+    pt.life -= dt;
+    const arr = pt.points.geometry.attributes.position;
+    for (let i = 0; i < pt.v.length; i++) {
+      arr.array[i*3] += pt.v[i].x * dt; arr.array[i*3+1] += pt.v[i].y * dt; arr.array[i*3+2] += pt.v[i].z * dt;
+      pt.v[i].y -= 6 * dt;
+    }
+    arr.needsUpdate = true;
+    pt.points.material.opacity = Math.max(0, pt.life);
+    if (pt.life <= 0) { scene.remove(pt.points); particles.splice(particles.indexOf(pt), 1); }
+  }
+  if (beam) { beamLife -= dt; if (beamLife <= 0) { scene.remove(beam); beam = null; } }
+
+  // camera: first person at the player's eye
+  camera.position.set(player.pos.x, player.pos.y + 1.7, player.pos.z);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
+
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+updateHUD();
+</script>
+</body>
+</html>
