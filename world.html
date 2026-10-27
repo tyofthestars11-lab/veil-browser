@@ -326,6 +326,30 @@
         }
 
         // Boot system graphics engine loop execution
+        // ===== WORLD SCORE: generative pads over the golden spiral — starts on first touch =====
+        (function () {
+            let on = false;
+            function go() {
+                if (on) return; on = true;
+                try {
+                    const ac = new (window.AudioContext || window.webkitAudioContext)();
+                    const bus = ac.createGain(); bus.gain.value = 0.4; bus.connect(ac.destination);
+                    const dly = ac.createDelay(1); dly.delayTime.value = 0.42; const fb = ac.createGain(); fb.gain.value = 0.4;
+                    dly.connect(fb); fb.connect(dly); dly.connect(bus);
+                    const mf3 = m => 440 * Math.pow(2, (m - 69) / 12), CHR = [[50, 53, 57], [53, 58, 62], [53, 57, 60], [52, 55, 60]];
+                    let bar = 0;
+                    setInterval(() => {
+                        if (document.hidden) return;
+                        const t = ac.currentTime + 0.05, ch = CHR[bar % 4]; bar++;
+                        for (const m of ch) { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sawtooth'; o.frequency.value = mf3(m); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 1.2); g.gain.linearRampToValueAtTime(0, t + 4.4); o.connect(g); g.connect(bus); o.start(t); o.stop(t + 4.6); }
+                        ch.forEach((m, i) => setTimeout(() => { const tt = ac.currentTime; const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = mf3(m + 12); g.gain.setValueAtTime(0.12, tt); g.gain.exponentialRampToValueAtTime(0.001, tt + 0.9); o.connect(g); g.connect(bus); g.connect(dly); o.start(tt); o.stop(tt + 1); }, i * 618));
+                    }, 4290);
+                } catch (e) { }
+            }
+            window.addEventListener('pointermove', go, { once: true });
+            window.addEventListener('touchstart', go, { once: true });
+        })();
+
         runEngineFrame();
     </script>
 </body>

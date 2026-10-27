@@ -533,6 +533,7 @@ function initAudio() {
     [55, 55 * PHI, 82.4].forEach(f => { const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(g); o.start(); });
     const lfo = AC.createOscillator(); lfo.frequency.value = 0.07;
     const lg = AC.createGain(); lg.gain.value = 0.02; lfo.connect(lg); lg.connect(g.gain); lfo.start();
+    startMusic();
   } catch (e) { AC = null; }
 }
 function tone(freq, dur, type = 'sine', vol = 0.2, slide = 0) {
@@ -560,6 +561,116 @@ const sfxArtifact = () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout((
 const sfxHurt = () => tone(140, 0.16, 'sawtooth', 0.16, -60);
 const sfxDash = () => noiseBurst(0.14, 0.10);
 const sfxWave = () => { tone(98, 0.5, 'sawtooth', 0.2, 30); tone(147, 0.5, 'sawtooth', 0.14, 20); };
+
+// ============================== THE SCORE — epic adaptive symphony, synthesized live ==============================
+// AAA adaptive audio (Wwise/FMOD doctrine), rebuilt from the source: vertical
+// layering by intensity + a composed melodic line over an epic progression.
+// Dm — Bb — F — C, 112 BPM. Zero audio files; the universe is the orchestra.
+const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+const CHORDS = [
+  { root: 38, tones: [50, 53, 57] },   // Dm
+  { root: 34, tones: [53, 58, 62] },   // Bb
+  { root: 41, tones: [53, 57, 60] },   // F
+  { root: 36, tones: [52, 55, 60] },   // C
+];
+const MELODY = { // step (16ths over the 64-step loop) -> [midi, length in steps]
+  0: [74, 3], 4: [72, 2], 6: [69, 2], 8: [74, 2], 10: [76, 2], 12: [77, 3],
+  16: [74, 3], 20: [77, 2], 22: [82, 2], 24: [81, 2], 26: [77, 2], 28: [74, 3],
+  32: [81, 3], 36: [79, 2], 38: [77, 2], 40: [76, 2], 42: [77, 2], 44: [81, 3],
+  48: [79, 3], 52: [76, 2], 54: [74, 2], 56: [72, 1], 57: [74, 1], 58: [76, 1], 59: [77, 1], 60: [81, 4],
+};
+const MUS = { on: false, step: 0, nextT: 0, timer: null, intensity: -1,
+  bus: null, pad: null, pulse: null, ost: null, brass: null, perc: null, choir: null, lead: null };
+function mnote(freq, t, dur, dest, { type = 'sawtooth', vol = 0.2, att = 0.02, lp = 0 } = {}) {
+  if (!AC) return;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + att);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  if (lp) { const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; o.connect(f); f.connect(g); }
+  else o.connect(g);
+  g.connect(dest); o.start(t); o.stop(t + dur + 0.05);
+}
+function mnoise(t, dur, dest, vol, hp) {
+  if (!AC) return;
+  const len = Math.max(1, Math.floor(AC.sampleRate * dur)), buf = AC.createBuffer(1, len, AC.sampleRate), ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const f = AC.createBiquadFilter(); f.type = hp ? 'highpass' : 'lowpass'; f.frequency.value = hp ? 6000 : 400;
+  const g = AC.createGain(); g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(dest); src.start(t);
+}
+function startMusic() {
+  if (!AC || MUS.on) return;
+  MUS.on = true;
+  MUS.bus = AC.createGain(); MUS.bus.gain.value = 0.9; MUS.bus.connect(masterGain);
+  for (const k of ['pad', 'pulse', 'ost', 'brass', 'perc', 'choir', 'lead']) {
+    MUS[k] = AC.createGain(); MUS[k].gain.value = 0; MUS[k].connect(MUS.bus);
+  }
+  // lead echo — the fantastical shimmer
+  const dly = AC.createDelay(1); dly.delayTime.value = 0.28;
+  const fb = AC.createGain(); fb.gain.value = 0.34;
+  const wet = AC.createGain(); wet.gain.value = 0.4;
+  MUS.lead.connect(dly); dly.connect(fb); fb.connect(dly); dly.connect(wet); wet.connect(MUS.bus);
+  MUS.step = 0; MUS.nextT = AC.currentTime + 0.06;
+  setMusicIntensity(0);
+  MUS.timer = setInterval(musicTick, 90);
+}
+function setMusicIntensity(n) {
+  if (!MUS.on || n === MUS.intensity) return;
+  MUS.intensity = n; const t = AC.currentTime;
+  const set = (g, v) => g.gain.setTargetAtTime(v, t, 1.1);
+  set(MUS.pad, 0.5);
+  set(MUS.lead, n === 0 ? 0.34 : 0.5);
+  set(MUS.pulse, n === 0 ? 0.16 : 0.42);
+  set(MUS.ost, n === 0 ? 0 : n === 1 ? 0.30 : n === 2 ? 0.42 : 0.52);
+  set(MUS.perc, n === 0 ? 0.10 : n === 1 ? 0.36 : 0.55);
+  set(MUS.brass, n < 2 ? 0 : n === 2 ? 0.34 : 0.44);
+  set(MUS.choir, n === 3 ? 0.30 : 0);
+}
+function musicTick() {
+  if (!AC || muted) { if (AC) MUS.nextT = Math.max(MUS.nextT, AC.currentTime + 0.05); return; }
+  const stepDur = 60 / 112 / 4; // 112 BPM, 16th notes
+  while (MUS.nextT < AC.currentTime + 0.22) {
+    scheduleStep(MUS.step, MUS.nextT, stepDur);
+    MUS.step = (MUS.step + 1) % 64;
+    MUS.nextT += stepDur;
+  }
+}
+function scheduleStep(step, t, stepDur) {
+  const ci = Math.floor(step / 16), chord = CHORDS[ci], inChord = step % 16, chordDur = stepDur * 16;
+  if (inChord === 0) { // PAD wash + choir root on boss
+    for (const m of chord.tones) {
+      mnote(mf(m), t, chordDur * 1.05, MUS.pad, { type: 'sawtooth', vol: 0.055, att: 0.7, lp: 1400 });
+      mnote(mf(m) * 1.003, t, chordDur * 1.05, MUS.pad, { type: 'triangle', vol: 0.05, att: 0.9, lp: 1200 });
+      mnote(mf(m + 12), t, chordDur, MUS.choir, { type: 'sawtooth', vol: 0.028, att: 1.1, lp: 2400 });
+    }
+  }
+  if (step % 2 === 0) // PULSE: low string ostinato on the root
+    mnote(mf(chord.root), t, stepDur * 1.7, MUS.pulse, { type: 'sawtooth', vol: step % 8 === 0 ? 0.30 : 0.20, att: 0.008, lp: 700 });
+  { // OSTINATO: spiccato 16ths cycling chord tones, octave bounce
+    const seq = [0, 1, 2, 1, 0, 2, 1, 2];
+    const m = chord.tones[seq[step % 8]] + (step % 16 >= 8 ? 12 : 0);
+    mnote(mf(m), t, stepDur * 0.9, MUS.ost, { type: 'square', vol: 0.075, att: 0.004, lp: 2600 });
+  }
+  const mel = MELODY[step]; // MELODY: the composed line
+  if (mel) mnote(mf(mel[0]), t, stepDur * mel[1] * 0.96, MUS.lead, { type: 'sawtooth', vol: 0.16, att: 0.015, lp: 3400 });
+  if (inChord === 0 || inChord === 8) // PERCUSSION: taiko heart
+    mnote(120, t, 0.22, MUS.perc, { type: 'sine', vol: 0.5, att: 0.002 });
+  if (step % 4 === 2) mnoise(t, 0.03, MUS.perc, 0.05, true); // shaker breath
+  if (inChord === 0 || inChord === 10) // BRASS stabs
+    for (const m of chord.tones) mnote(mf(m + 12), t, stepDur * 3, MUS.brass, { type: 'sawtooth', vol: 0.07, att: 0.05, lp: 1800 });
+}
+// intensity driver: the game state conducts the orchestra
+setInterval(() => {
+  if (!MUS.on || S.mode !== 'play') return;
+  let n = 0;
+  if (drones.some(d => d.boss)) n = 3;
+  else if (S.wave) n = 2;
+  else if (drones.some(d => d.state === 'chase')) n = 1;
+  setMusicIntensity(n);
+}, 450);
 
 // ============================== LORE — the last signal, fragment by fragment ==============================
 const LORE = [
