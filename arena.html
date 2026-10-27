@@ -78,6 +78,28 @@
             border-radius: 8px;
             background: rgba(10,8,20,.5);
         }
+        #leap-btn {
+            position: absolute;
+            bottom: 28px;
+            right: 24px;
+            z-index: 5;
+            color: #e8b84b;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border: 1px solid rgba(232,184,75,.55);
+            padding: 14px 22px;
+            border-radius: 999px;
+            background: rgba(10,8,20,.55);
+            cursor: pointer;
+            touch-action: none;
+            font-family: inherit;
+        }
+        #leap-btn:active {
+            transform: scale(0.94);
+            background: rgba(232,184,75,.3);
+        }
     </style>
 </head>
 <body>
@@ -90,9 +112,11 @@
     <a id="back-link" href="./index.html">&#8592; VEIL: The Last Signal</a>
     <a id="back-link" href="./world.html" style="top:76px;">OMNI WORLD 3D</a>
 
-    <div id="instruction-overlay">Drag / Move mouse to steer core &middot; WASD overrides</div>
+    <div id="instruction-overlay">Drag / Move mouse to steer core &middot; WASD overrides &middot; SPACE or LEAP button to leap</div>
 
     <canvas id="stage"></canvas>
+
+    <button id="leap-btn">Leap</button>
 
     <script>
         const canvas = document.getElementById('stage');
@@ -158,8 +182,20 @@
             },
             particles: [],
             anomalies: [],
-            shockwaves: []
+            shockwaves: [],
+            leap: { vx: 0, vy: 0, t: 0, cd: 0, faceX: 1, faceY: 0 }
         };
+
+        // Precomputed starfield (screen space, drawn behind the world each frame)
+        const STARS = [];
+        for (let i = 0; i < 170; i++) {
+            STARS.push({
+                x: Math.random(), y: Math.random(),
+                s: Math.random() * 1.6 + 0.4,
+                ph: Math.random() * Math.PI * 2,
+                sp: 0.4 + Math.random() * 1.1
+            });
+        }
 
         // Input Listeners
         const updateTarget = (e) => {
@@ -176,6 +212,39 @@
         const keysHeld = {};
         window.addEventListener('keydown', e => { keysHeld[e.code] = true; });
         window.addEventListener('keyup', e => { keysHeld[e.code] = false; });
+
+        // LEAP: phi burst along the core's current heading (SPACE or the LEAP button)
+        let leapAC = null;
+        function leapTone() {
+            try {
+                leapAC = leapAC || new (window.AudioContext || window.webkitAudioContext)();
+                if (leapAC.state === 'suspended') leapAC.resume();
+                const t0 = leapAC.currentTime;
+                const o = leapAC.createOscillator(), g = leapAC.createGain();
+                o.type = 'sine';
+                o.frequency.setValueAtTime(220, t0);
+                o.frequency.exponentialRampToValueAtTime(220 * PHI * PHI, t0 + 0.28);
+                g.gain.setValueAtTime(0.16, t0);
+                g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.3);
+                o.connect(g); g.connect(leapAC.destination);
+                o.start(t0); o.stop(t0 + 0.32);
+            } catch (e) { }
+        }
+        function tryLeap() {
+            const L = state.leap, p = state.player;
+            if (L.cd > 0) return;
+            L.cd = 72; // ~1.2s at 60fps
+            L.t = 14;
+            L.vx = L.faceX * 22;
+            L.vy = L.faceY * 22;
+            state.shockwaves.push(createShockwave(p.x, p.y, 130));
+            for (let k = 0; k < 18; k++) state.particles.push(createParticle(p.x, p.y, '#ffd700', 1.6));
+            leapTone();
+        }
+        window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); tryLeap(); } });
+        const leapBtn = document.getElementById('leap-btn');
+        leapBtn.addEventListener('touchstart', e => { e.preventDefault(); tryLeap(); }, { passive: false });
+        leapBtn.addEventListener('mousedown', () => tryLeap());
 
         // Factory Functions
         function createParticle(x, y, color, speedMultiplier = 1) {
@@ -230,6 +299,22 @@
             p.x += (p.targetX - p.x) * p.speed;
             p.y += (p.targetY - p.y) * p.speed;
             p.radius = Math.sqrt(p.mass) * 8 + 4;
+
+            // Heading tracking: leap fires along the way the core is travelling,
+            // falling back to the pointer offset when nearly at rest
+            const L = state.leap;
+            const fdx = p.targetX - p.x, fdy = p.targetY - p.y;
+            const fd = Math.hypot(fdx, fdy);
+            if (fd > 6) { L.faceX = fdx / fd; L.faceY = fdy / fd; }
+
+            // LEAP burst physics: displaces core and target together so the lerp lands the leap
+            if (L.cd > 0) L.cd--;
+            if (L.t > 0) {
+                L.t--;
+                p.x += L.vx; p.y += L.vy;
+                p.targetX += L.vx; p.targetY += L.vy;
+                L.vx *= 0.86; L.vy *= 0.86;
+            }
 
             // Camera calculations tracking player with a trailing delay lag
             const cam = state.camera;
@@ -322,6 +407,25 @@
             // --- 2. CANVAS RENDERING ENGINE ---
             ctx.fillStyle = '#020208';
             ctx.fillRect(0, 0, width, height);
+
+            // Starfield backdrop (twinkling) + golden planet glow — screen space, behind the world
+            const nowS = performance.now() / 1000;
+            const planetX = width * 0.1, planetY = height * 0.85;
+            const pg = ctx.createRadialGradient(planetX, planetY, 8, planetX, planetY, 180);
+            pg.addColorStop(0, 'rgba(255, 205, 92, 0.30)');
+            pg.addColorStop(0.25, 'rgba(232, 184, 75, 0.15)');
+            pg.addColorStop(1, 'rgba(232, 184, 75, 0)');
+            ctx.fillStyle = pg;
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#ffd970';
+            ctx.globalAlpha = 0.85;
+            ctx.beginPath(); ctx.arc(planetX, planetY, 22, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#dfe9ff';
+            for (const st of STARS) {
+                ctx.globalAlpha = 0.25 + 0.65 * Math.abs(Math.sin(nowS * st.sp + st.ph));
+                ctx.fillRect(st.x * width, st.y * height, st.s, st.s);
+            }
+            ctx.globalAlpha = 1;
 
             ctx.save();
             // Implement cinematic screen shake matrix transform offsets

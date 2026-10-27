@@ -100,7 +100,8 @@
     <div id="controls-guide">
         Move Mouse / Drag: Steer Mercenary Singularity<br>
         Scroll Wheel: Adjust Camera Orbit Range<br>
-        Approach Anomalies to Absorb Space-Time Mass
+        Approach Anomalies to Absorb Space-Time Mass<br>
+        SPACE: Phi Surge — Burst Along Your Heading
     </div>
 
     <div id="webgl-container"></div>
@@ -128,6 +129,17 @@
             npcs: [],
             gridLines: []
         };
+
+        // SURGE: phi burst along the singularity's current heading (SPACE)
+        state.surge = { until: 0, cdUntil: 0, heading: new THREE.Vector3(1, 0, 0), flash: false };
+        window.addEventListener('keydown', (e) => {
+            if (e.code !== 'Space') return;
+            const now = performance.now() / 1000;
+            if (now < state.surge.cdUntil) return;
+            state.surge.until = now + 0.6;   // burst duration
+            state.surge.cdUntil = now + 1.6; // cooldown
+            state.surge.flash = true;        // compiler stream reports the surge
+        });
 
         // --- 2. INITIALIZE 3D GRAPHICS PIPELINE (THREE.JS) ---
         const container = document.getElementById('webgl-container');
@@ -222,6 +234,41 @@
             });
         }
 
+        // --- 4B. STARFIELD + GOLDEN PLANET — the far sky, phi-lit ---
+        (function buildSky() {
+            const starCount = 800;
+            const sPos = new Float32Array(starCount * 3);
+            const sCol = new Float32Array(starCount * 3);
+            const gold = new THREE.Color(0xffd98a), ice = new THREE.Color(0xcfe2ff);
+            for (let i = 0; i < starCount; i++) {
+                const v = new THREE.Vector3().randomDirection().multiplyScalar(420 + Math.random() * 260);
+                sPos.set([v.x, v.y, v.z], i * 3);
+                const c = Math.random() < 0.3 ? gold : ice;
+                sCol.set([c.r, c.g, c.b], i * 3);
+            }
+            const sg = new THREE.BufferGeometry();
+            sg.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+            sg.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
+            const sm = new THREE.PointsMaterial({ size: 2.2, vertexColors: true, fog: false, transparent: true, opacity: 0.95 });
+            scene.add(new THREE.Points(sg, sm));
+
+            const planet = new THREE.Mesh(
+                new THREE.SphereGeometry(30, 32, 32),
+                new THREE.MeshBasicMaterial({ color: 0xe8b84b, fog: false })
+            );
+            planet.position.set(230, 120, -340);
+            scene.add(planet);
+            const ring = new THREE.Mesh(
+                new THREE.RingGeometry(40, 62, 64),
+                new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.45, side: THREE.DoubleSide, fog: false })
+            );
+            ring.position.copy(planet.position);
+            ring.rotation.x = Math.PI / 2.6;
+            scene.add(ring);
+            state.planet = planet;
+            state.planetRing = ring;
+        })();
+
         // --- 5B. THREADED NPC COLONY — 80 systemic minds, staggered async ticks (decompiled threading model) ---
         const npcGeo = new THREE.IcosahedronGeometry(0.8, 0);
         const npcMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, wireframe: true });
@@ -256,7 +303,12 @@
             ];
             setInterval(() => {
                 frame += 47;
-                lines.push(ops[Math.floor(Math.random() * ops.length)]());
+                if (state.surge && state.surge.flash) {
+                    state.surge.flash = false;
+                    lines.push('[SURGE] phi surge \u00B7 heading locked \u00B7 burst x' + (PHI * PHI).toFixed(3));
+                } else {
+                    lines.push(ops[Math.floor(Math.random() * ops.length)]());
+                }
                 if (lines.length > 7) lines.shift();
                 if (el) el.innerHTML = lines.join('<br>');
             }, 800);
@@ -307,7 +359,12 @@
 
             // Interp Player Mechanics
             const p = state.player;
-            p.position.lerp(p.targetPosition, p.speed);
+            // Heading = travel direction toward the pointer target; kept when nearly at rest
+            const toTgt = p.targetPosition.clone().sub(p.position); toTgt.y = 0;
+            if (toTgt.lengthSq() > 4) state.surge.heading.copy(toTgt.normalize());
+            const surging = (performance.now() / 1000) < state.surge.until;
+            if (surging) p.position.addScaledVector(state.surge.heading, 55 * dt);
+            p.position.lerp(p.targetPosition, surging ? 0.13 : p.speed);
             playerCoreMesh.position.copy(p.position);
             playerShieldMesh.position.copy(p.position);
 
@@ -315,11 +372,13 @@
             const dynamicScale = Math.sqrt(p.mass) * 0.8;
             playerCoreMesh.scale.setScalar(dynamicScale);
             playerShieldMesh.scale.setScalar(dynamicScale * 1.8);
+            shieldMat.opacity = surging ? 0.45 : 0.15;
 
             // Rotate core structures to simulate complex engine components
             playerCoreMesh.rotation.y += 0.01;
             playerCoreMesh.rotation.x += 0.005;
             playerShieldMesh.rotation.z -= 0.003;
+            if (state.planet) { state.planet.rotation.y += 0.0006; state.planetRing.rotation.z += 0.001; }
 
             // Threaded NPC colony: think on staggered ticks, move every frame
             for (const npc of state.npcs) {
